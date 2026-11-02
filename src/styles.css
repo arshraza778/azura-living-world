@@ -142,3 +142,64 @@
     color: var(--color-foreground);
   }
 }
+
+/* ===== Azura fantasy theme ===== */
+:root {
+  --gold: oklch(0.82 0.13 85);
+  --parchment: oklch(0.94 0.04 85);
+  --ink: oklch(0.18 0.03 50);
+  --panel: oklch(0.2 0.03 45 / 0.85);
+  --panel-edge: oklch(0.62 0.1 70);
+  --hp: oklch(0.6 0.2 25);
+  --stamina: oklch(0.72 0.15 140);
+  --hunger: oklch(0.72 0.14 65);
+  --xp: oklch(0.75 0.13 230);
+}
+@theme inline {
+  --color-gold: var(--gold);
+  --color-parchment: var(--parchment);
+  --color-ink: var(--ink);
+  --font-display: "Cinzel Decorative", "Cinzel", serif;
+  --font-body: "Cormorant Garamond", serif;
+}
+body { background: var(--ink); font-family: var(--font-body); }
+.font-display { font-family: "Cinzel", serif; letter-spacing: 0.04em; }
+
+.fantasy-panel {
+  background: linear-gradient(180deg, oklch(0.26 0.04 45 / 0.9), var(--panel));
+  border: 2px solid var(--panel-edge);
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px oklch(0 0 0 / 0.6), inset 0 0 18px oklch(0 0 0 / 0.5), 0 8px 24px oklch(0 0 0 / 0.5);
+  backdrop-filter: blur(4px);
+}
+.fantasy-btn, .fantasy-btn-primary {
+  font-family: "Cinzel", serif; font-size: 0.8rem;
+  padding: 0.4rem 0.8rem; border-radius: 6px; color: var(--parchment);
+  background: linear-gradient(180deg, oklch(0.34 0.05 45), oklch(0.22 0.04 40));
+  border: 1px solid var(--panel-edge); transition: filter .15s, transform .1s;
+}
+.fantasy-btn:hover:not(:disabled), .fantasy-btn-primary:hover { filter: brightness(1.25); }
+.fantasy-btn:active { transform: translateY(1px); }
+.fantasy-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.fantasy-btn-primary {
+  color: var(--ink); font-weight: 700;
+  background: linear-gradient(180deg, oklch(0.88 0.12 88), oklch(0.68 0.13 70));
+}
+.parchment-card {
+  color: var(--ink); border-radius: 8px;
+  background: radial-gradient(ellipse at center, oklch(0.95 0.04 85), oklch(0.84 0.07 75));
+  border: 2px solid oklch(0.5 0.08 55);
+  box-shadow: inset 0 0 30px oklch(0.5 0.08 55 / 0.4);
+}
+.bar-track { height: 0.6rem; border-radius: 99px; background: oklch(0 0 0 / 0.55); border: 1px solid oklch(0.5 0.06 60); overflow: hidden; }
+.bar-fill { height: 100%; transition: width .25s; box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.35); }
+.bar-hp { background: var(--hp); }
+.bar-stamina { background: var(--stamina); }
+.bar-hunger { background: var(--hunger); }
+.bar-xp { background: var(--xp); }
+.kbd { font-size: 0.65rem; padding: 0 0.3rem; border: 1px solid var(--panel-edge); border-radius: 3px; opacity: 0.8; }
+.danger-1 { color: oklch(0.5 0.14 145); }
+.danger-2 { color: oklch(0.55 0.13 110); }
+.danger-3 { color: oklch(0.58 0.15 70); }
+.danger-4 { color: oklch(0.55 0.18 40); }
+.danger-5 { color: oklch(0.5 0.2 25); }
