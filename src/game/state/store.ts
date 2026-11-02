@@ -1,3 +1,4 @@
+import { ATTRIBUTES, BALANCE, emptyAttributes, effects, masteryThreshold, migrateGrowth, type Attribute, type Growth, type Mastery } from "./growth";
 import { useEffect, useReducer } from "react";
 import type { MonsterKind, RegionId, SceneId } from "../core/types";
 import { ITEMS } from "../data/items";
@@ -14,6 +15,7 @@ export interface MissionState {
 }
 
 export interface PlayerData {
+  growth: Growth;
   name: string;
   level: number;
   xp: number;
@@ -24,6 +26,8 @@ export interface PlayerData {
   maxStamina: number;
   hunger: number;
   inventory: Record<string, number>;
+  equipment: Partial<Record<import("../data/items").EquipmentSlot, string>>;
+  equipmentUpgrades: Record<string, number>;
   discoveredRegions: RegionId[];
   discoveredPois: string[];
   openedChests: string[];
@@ -32,16 +36,20 @@ export interface PlayerData {
   pos: { scene: SceneId; x: number; y: number };
   appearance: Appearance;
   starterV2?: boolean;
+  starterV3?: boolean;
+  discoveredRecipes?: string[];
+  farmPlots?: { crop: string | null; plantedAt: number; watered: boolean }[];
+  fishCaught?: number;
 }
 
-export type Panel = null | "map" | "inventory" | "character" | "quests" | "guild" | "dialogue" | "shop";
+export type Panel = null | "map" | "inventory" | "character" | "quests" | "guild" | "dialogue" | "shop" | "crafting" | "farming";
 
 export interface DialogueState {
   name: string;
   title?: string;
   lines: string[];
   page: number;
-  role?: "receptionist" | "merchant" | "innkeeper" | "trainer" | "villager" | "info";
+  role?: "receptionist" | "merchant" | "innkeeper" | "trainer" | "villager" | "blacksmith" | "alchemist" | "info";
 }
 
 export interface UIState {
@@ -57,6 +65,7 @@ export interface UIState {
 
 export function defaultData(): PlayerData {
   return {
+    growth: migrateGrowth(undefined, 1),
     name: "Wanderer",
     level: 1,
     xp: 0,
@@ -66,8 +75,11 @@ export function defaultData(): PlayerData {
     stamina: 100,
     maxStamina: 100,
     hunger: 80,
-    inventory: { apple: 4, bread: 2, healing_potion: 2, wooden_sword: 1, forest_fiber: 3 },
+    inventory: { apple: 4, bread: 2, healing_potion: 2, wooden_sword: 1, forest_fiber: 3, axe: 1, pickaxe: 1, gathering_knife: 1, fishing_rod: 1, watering_can: 1, wheat_seeds: 2, carrot_seeds: 2, potato_seeds: 2, herb_seeds: 2 },
+    equipment: { weapon: "wooden_sword" },
+    equipmentUpgrades: {},
     starterV2: true,
+    starterV3: true,
     appearance: { ...DEFAULT_APPEARANCE },
     discoveredRegions: ["eldergrove"],
     discoveredPois: ["eldergrove"],
@@ -75,6 +87,9 @@ export function defaultData(): PlayerData {
     missions: {},
     kills: {},
     pos: { scene: "overworld", x: VILLAGE_SPAWN.x, y: VILLAGE_SPAWN.y },
+    discoveredRecipes: ["healing_potion", "bread", "axe", "pickaxe", "knife", "fishing_rod", "watering_can"],
+    farmPlots: Array.from({ length: 6 }, () => ({ crop: null, plantedAt: 0, watered: false })),
+    fishCaught: 0,
   };
 }
 
@@ -118,13 +133,30 @@ export function loadSave() {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return;
     const parsed = JSON.parse(raw) as Partial<PlayerData>;
+    // Keep a one-time, untouched Phase 5 snapshot before introducing growth data.
+    if (!parsed.growth) {
+      try { if (!localStorage.getItem(`${SAVE_KEY}.phase5.backup`)) localStorage.setItem(`${SAVE_KEY}.phase5.backup`, raw); } catch { /* A full quota must not prevent loading the existing save. */ }
+    }
     game.data = { ...defaultData(), ...parsed };
+    game.data.growth = migrateGrowth(parsed.growth, game.data.level);
+    recalculateStats();
     game.data.appearance = { ...DEFAULT_APPEARANCE, ...(parsed.appearance ?? {}) };
+    game.data.equipment = { ...(parsed.equipment ?? { weapon: "wooden_sword" }) };
+    game.data.equipmentUpgrades = { ...(parsed.equipmentUpgrades ?? {}) };
     if (!parsed.starterV2) {
       // Grant the Phase 2 starter kit once to existing saves.
       for (const [k, n] of Object.entries({ apple: 4, healing_potion: 2, wooden_sword: 1, forest_fiber: 3 })) addItem(k, n);
       game.data.starterV2 = true;
     }
+    if (!parsed.starterV3) {
+      for (const [k, n] of Object.entries({ axe: 1, pickaxe: 1, gathering_knife: 1, fishing_rod: 1, watering_can: 1, wheat_seeds: 2, carrot_seeds: 2, potato_seeds: 2, herb_seeds: 2 })) addItem(k, n);
+      game.data.farmPlots ??= Array.from({ length: 6 }, () => ({ crop: null, plantedAt: 0, watered: false }));
+      game.data.discoveredRecipes ??= ["healing_potion", "bread", "axe", "pickaxe", "knife", "fishing_rod", "watering_can"];
+      game.data.starterV3 = true;
+      save();
+    }
+    save();
+    emit();
   } catch {
     game.data = defaultData();
   }
@@ -174,8 +206,79 @@ export function openDialogue(d: Omit<DialogueState, "page">) {
 
 // ---------- progression ----------
 export const xpForLevel = (lvl: number) => 50 * lvl + 25 * (lvl - 1) * (lvl - 1);
-export const attackPower = (d: PlayerData) =>
-  8 + d.level * 3 + Math.max(0, ...Object.keys(d.inventory).map((id) => ITEMS[id]?.attack ?? 0));
+export const equippedBonus = (d: PlayerData, stat: "attack" | "defence" | "healthBonus" | "staminaBonus") =>
+  Object.values(d.equipment ?? {}).reduce((sum, id) => {
+    if (!id) return sum;
+    const item = ITEMS[id];
+    return sum + (item?.[stat] ?? 0) + (item?.[stat] ? (d.equipmentUpgrades?.[id] ?? 0) * Math.max(1, Math.floor(item[stat]! * 0.2)) : 0);
+  }, 0);
+export const statEffects = (d: PlayerData) => effects(d.growth.attributes);
+export const attackPower = (d: PlayerData) => Number(((8 + d.level * 3 + equippedBonus(d, "attack")) * statEffects(d).attack).toFixed(2));
+// Future spells must call magicDamage rather than physical attackPower.
+export const magicDamage = (d: PlayerData, base: number) => Math.max(0, base) * statEffects(d).magic;
+export const incomingDamage = (d: PlayerData, raw: number, armourScale = 1) => Math.max(1, (raw - defencePower(d) * armourScale) * (1 - statEffects(d).resistance));
+export const staminaCost = (d: PlayerData, base: number, dodge = false) => base * statEffects(d).staminaCost * (dodge ? statEffects(d).dodgeCost : 1);
+export function recalculateStats() {
+  const d = game.data, f = statEffects(d);
+  d.maxHp = Math.round((100 + (d.level-1)*15 + equippedBonus(d, "healthBonus")) * f.health);
+  d.maxStamina = Math.round((100 + (d.level-1)*5 + equippedBonus(d, "staminaBonus")) * f.stamina);
+  d.hp = Math.min(d.hp, d.maxHp); d.stamina = Math.min(d.stamina, d.maxStamina);
+}
+export const pendingTotal = () => Object.values(game.data.growth.pending).reduce((a,b) => a+b,0);
+export function stageAttribute(key: Attribute) {
+  const g = game.data.growth;
+  if (!ATTRIBUTES.includes(key) || pendingTotal() >= g.unspent) return;
+  g.pending[key]++; save(); emit();
+}
+export function cancelAttributes() { game.data.growth.pending = emptyAttributes(); save(); emit(); }
+export function confirmAttributes() {
+  const g = game.data.growth, total = pendingTotal();
+  if (!total || total > g.unspent || ATTRIBUTES.some(k => !Number.isSafeInteger(g.pending[k]) || g.pending[k] < 0)) return false;
+  for (const key of ATTRIBUTES) g.attributes[key] += g.pending[key];
+  g.unspent -= total; g.pending = emptyAttributes(); recalculateStats(); save(); emit();
+  toast("Attributes confirmed.", "good"); return true;
+}
+// Persisted rate limits survive refreshes. XP is awarded only at successful activity completion.
+export function addMasteryXp(track: Mastery, amount: number, cooldownMs = 0) {
+  if (!Number.isFinite(amount) || amount <= 0) return false;
+  const g = game.data.growth, now = Date.now(), last = g.activityAt[track];
+  if (last !== undefined && now - last < cooldownMs) return false;
+  g.activityAt[track] = now;
+  const m = g.masteries[track]; m.xp += Math.min(25, Math.floor(amount));
+  while (m.xp >= masteryThreshold(m.level)) { m.xp -= masteryThreshold(m.level); m.level++; toast(`${track} mastery reached level ${m.level}!`, "gold"); }
+  save(); emit(); return true;
+}
+
+export const defencePower = (d: PlayerData) => equippedBonus(d, "defence");
+export function equipItem(id: string) {
+  const d = game.data, def = ITEMS[id];
+  if (!def?.slot || !d.inventory[id]) return toast("This item cannot be equipped.", "bad");
+  d.equipment ??= {};
+  d.equipment[def.slot] = id;
+  recalculateStats();
+  d.hp = Math.min(d.maxHp, d.hp); d.stamina = Math.min(d.maxStamina, d.stamina);
+  toast(`${def.name} equipped.`, "good"); save(); emit();
+}
+export function unequipItem(slot: import("../data/items").EquipmentSlot) {
+  const d = game.data; delete d.equipment[slot];
+  recalculateStats();
+  d.hp = Math.min(d.hp, d.maxHp); d.stamina = Math.min(d.stamina, d.maxStamina);
+  save(); emit(); toast(`${slot} unequipped.`);
+}
+export function upgradeEquipment(id: string) {
+  const d = game.data, def = ITEMS[id];
+  if (!def?.slot || !d.inventory[id]) return toast("Select owned equipment to upgrade.", "bad");
+  const level = d.equipmentUpgrades[id] ?? 0;
+  if (level >= (def.upgradeMax ?? 5)) return toast("This item is already at its upgrade limit.", "info");
+  const material = id.includes("sword") ? "ancient_shard" : "forest_fiber";
+  const need = level + 1, goldCost = 15 * (level + 1);
+  if ((d.inventory[material] ?? 0) < need || d.gold < goldCost) return toast(`Need ${need} ${ITEMS[material].name} and ${goldCost} gold.`, "bad");
+  d.inventory[material] -= need; if (!d.inventory[material]) delete d.inventory[material];
+  d.gold -= goldCost; d.equipmentUpgrades[id] = level + 1;
+  recalculateStats();
+  d.hp = Math.min(d.hp, d.maxHp); d.stamina = Math.min(d.stamina, d.maxStamina);
+  toast(`${def.name} upgraded to +${level + 1}. Stats improved.`, "gold"); save(); emit();
+}
 
 export function setAppearance(a: Partial<Appearance>) {
   game.data.appearance = { ...game.data.appearance, ...a };
@@ -184,16 +287,22 @@ export function setAppearance(a: Partial<Appearance>) {
 }
 
 export function addXp(amount: number) {
+  if (!Number.isFinite(amount) || amount <= 0) return;
   const d = game.data;
   d.xp += amount;
+  const levels: number[] = [];
   while (d.xp >= xpForLevel(d.level)) {
-    d.xp -= xpForLevel(d.level);
-    d.level++;
-    d.maxHp += 15;
-    d.maxStamina += 5;
-    d.hp = d.maxHp;
-    toast(`Level up! You are now level ${d.level}.`, "gold");
+    d.xp -= xpForLevel(d.level); d.level++;
+    if (d.level > d.growth.rewardedLevel) {
+      d.growth.unspent += BALANCE.pointsPerLevel;
+      d.growth.rewardedLevel = d.level;
+    }
+    recalculateStats(); d.hp = d.maxHp;
+    levels.push(d.level);
   }
+  // Save the reward watermark and point balance atomically before notifications.
+  save(); emit();
+  for (const level of levels) toast(`Level up! Level ${level} · +3 attribute points.`, "gold");
 }
 
 export function addItem(id: string, n = 1) {
@@ -204,7 +313,7 @@ export function useItem(id: string) {
   const d = game.data;
   const def = ITEMS[id];
   if (!def?.use || !d.inventory[id]) return;
-  if (def.use.hp) d.hp = Math.min(d.maxHp, d.hp + def.use.hp);
+  if (def.use.hp) d.hp = Math.min(d.maxHp, d.hp + def.use.hp * (def.kind === "potion" || id.includes("potion") ? statEffects(d).magic : 1));
   if (def.use.hunger) d.hunger = Math.min(100, d.hunger + def.use.hunger);
   if (def.use.stamina) d.stamina = Math.min(d.maxStamina, d.stamina + def.use.stamina);
   d.inventory[id]--;
@@ -253,6 +362,57 @@ export function rest(price: number) {
   emit();
 }
 
+// ---------- gathering, crafting, fishing and farming ----------
+export const RECIPES: Record<string, { name: string; result: string; count: number; ingredients: Record<string, number>; time: number; category: string }> = {
+  axe: { name: "Woodcutter Axe", result: "axe", count: 1, ingredients: { wood: 4, stone: 2, branch: 1 }, time: 3, category: "Tools" },
+  pickaxe: { name: "Miner's Pickaxe", result: "pickaxe", count: 1, ingredients: { wood: 3, stone: 4, iron_ore: 1 }, time: 4, category: "Tools" },
+  knife: { name: "Gathering Knife", result: "gathering_knife", count: 1, ingredients: { wood: 1, stone: 2, iron_ore: 1 }, time: 2, category: "Tools" },
+  fishing_rod: { name: "Fishing Rod", result: "fishing_rod", count: 1, ingredients: { wood: 3, branch: 2, forest_fiber: 2 }, time: 3, category: "Tools" },
+  watering_can: { name: "Watering Can", result: "watering_can", count: 1, ingredients: { iron_ore: 2, wood: 1 }, time: 2, category: "Tools" },
+  healing_potion: { name: "Herbal Healing Potion", result: "healing_potion", count: 2, ingredients: { herb: 2, mushroom: 1 }, time: 4, category: "Potions" },
+  stamina_potion: { name: "Stamina Tonic", result: "stamina_potion", count: 1, ingredients: { herb: 1, rare_herb: 1 }, time: 4, category: "Potions" },
+  bread: { name: "Trail Bread", result: "bread", count: 2, ingredients: { wheat: 3 }, time: 3, category: "Food" },
+  cooked_fish: { name: "Pan-seared River Fish", result: "cooked_fish", count: 1, ingredients: { river_fish: 1, mushroom: 1 }, time: 5, category: "Food" },
+  iron_sword: { name: "Ironbark Sword", result: "iron_sword", count: 1, ingredients: { iron_ore: 4, wood: 2, forest_fiber: 2 }, time: 6, category: "Weapons" },
+};
+export function gatherResource(item: string, amount = 1) {
+  const d = game.data; const tool = item === "wood" || item === "branch" ? "axe" : item === "stone" || item === "iron_ore" || item === "copper_ore" ? "pickaxe" : "gathering_knife";
+  if (tool !== "gathering_knife" && !d.inventory[tool]) return toast(`You need a ${tool.replace("_", " ")} to gather this.`, "bad");
+  addItem(item, amount); addMasteryXp("gathering", 6, 450); if (item === "wood") addItem("branch", 1); toast(`Gathered ${amount}× ${ITEMS[item]?.name ?? item}${item === "wood" ? " and 1× Dry Branch" : ""}.`, "good"); save(); emit();
+}
+const craftingNow = new Set<string>();
+export function craftRecipe(id: string) {
+  const d = game.data, r = RECIPES[id]; if (!r || craftingNow.has(id)) return;
+  for (const [item, n] of Object.entries(r.ingredients)) if ((d.inventory[item] ?? 0) < n) return toast(`Missing ${n}× ${ITEMS[item]?.name ?? item}.`, "bad");
+  craftingNow.add(id); toast(`Crafting ${r.name}…`, "info");
+  window.setTimeout(() => {
+    const current = game.data;
+    if (Object.entries(r.ingredients).some(([item,n]) => (current.inventory[item] ?? 0) < n)) { craftingNow.delete(id); return toast("Craft cancelled: ingredients changed.", "bad"); }
+    for (const [item, n] of Object.entries(r.ingredients)) { current.inventory[item] -= n; if (!current.inventory[item]) delete current.inventory[item]; }
+    addItem(r.result, r.count); addMasteryXp("crafting", 8, 700); craftingNow.delete(id); toast(`Crafted ${r.count}× ${ITEMS[r.result]?.name ?? r.name}.`, "good"); save(); emit();
+  }, Math.max(700, r.time * 500));
+}
+export function plantCrop(index: number, crop: string) {
+  const d = game.data; d.farmPlots ??= Array.from({ length: 6 }, () => ({ crop: null, plantedAt: 0, watered: false }));
+  if (!["wheat", "carrot", "potato", "herb"].includes(crop) || !Number.isInteger(index)) return;
+  if (!d.inventory[`${crop}_seeds`]) return toast(`You need ${crop} seeds.`, "bad");
+  const plot = d.farmPlots[index]; if (!plot || plot.crop) return toast("That plot is occupied.", "bad");
+  d.inventory[`${crop}_seeds`]--; if (!d.inventory[`${crop}_seeds`]) delete d.inventory[`${crop}_seeds`];
+  plot.crop = crop; plot.plantedAt = Date.now(); plot.watered = false; save(); emit(); toast(`${crop} seeds planted. Water them to help them grow.`, "good");
+}
+export function waterCrop(index: number) {
+  const d=game.data, plot=d.farmPlots?.[index]; if (!plot?.crop) return toast("Nothing is planted here.");
+  if (!d.inventory["watering_can"]) return toast("You need a watering can.", "bad");
+  if (plot.watered) return toast("This crop is already watered.");
+  plot.watered=true; plot.plantedAt=Math.min(plot.plantedAt, Date.now()-60_000); save(); emit(); toast("Crop watered. Growth accelerated.", "good");
+}
+export function harvestCrop(index: number) {
+  const d=game.data, plot=d.farmPlots?.[index]; if (!plot?.crop) return;
+  const duration=plot.watered ? 90_000 : 180_000; if (Date.now()-plot.plantedAt < duration) return toast("This crop is still growing.", "info");
+  const crop=plot.crop; addItem(crop, crop === "herb" ? 2 : 3); plot.crop=null; plot.plantedAt=0; plot.watered=false; addMasteryXp("farming", 10); save(); emit(); toast(`Harvested ${crop}!`, "good");
+}
+export function catchFish() { const d=game.data; if (!d.inventory["fishing_rod"]) return toast("You need a fishing rod.", "bad"); if (Date.now() - (d.growth.activityAt.fishing ?? -Infinity) < 1800) return; const fish=Math.random()<0.12?"golden_trout":"river_fish"; addItem(fish,1); d.fishCaught=(d.fishCaught??0)+1; addMasteryXp("fishing", 8, 1800); save(); emit(); toast(`You caught ${ITEMS[fish].name}!`, "good"); }
+
 // ---------- missions ----------
 export function missionProgress(m: MissionDef): { cur: number; max: number } {
   const d = game.data;
@@ -262,6 +422,7 @@ export function missionProgress(m: MissionDef): { cur: number; max: number } {
     const base = st?.base ?? 0;
     return { cur: Math.min(g.count, (d.kills[g.monster] ?? 0) - base), max: g.count };
   }
+  if (g.type === "collect") { const base = st?.base ?? 0; return { cur: Math.min(g.count, Math.max(0, (d.inventory[g.item] ?? 0) - base)), max: g.count }; }
   if (g.type === "poi") return { cur: d.discoveredPois.includes(g.poi) ? 1 : 0, max: 1 };
   return { cur: d.discoveredRegions.includes(g.region) ? 1 : 0, max: 1 };
 }
@@ -277,7 +438,7 @@ export function acceptMission(id: string) {
   if (!m || d.missions[id]) return;
   const active = Object.values(d.missions).filter((s) => s.status === "active").length;
   if (active >= MAX_ACTIVE_MISSIONS) return toast(`You can only hold ${MAX_ACTIVE_MISSIONS} active missions.`, "bad");
-  d.missions[id] = { status: "active", base: m.goal.type === "kill" ? d.kills[m.goal.monster] ?? 0 : 0 };
+  d.missions[id] = { status: "active", base: m.goal.type === "kill" ? d.kills[m.goal.monster] ?? 0 : m.goal.type === "collect" ? d.inventory[m.goal.item] ?? 0 : 0 };
   toast(`Mission accepted: ${m.title}`, "good");
   save();
   emit();

@@ -62,7 +62,7 @@ export const REGIONS: RegionDef[] = [
     groundTile: 17,
     treeDensity: 0.32,
     trees: ["oak", "oak", "pine", "birch"],
-    monsters: ["slime", "slime", "wolf"],
+    monsters: ["slime", "slime", "slime", "wolf", "wolf", "goblin", "goblin", "boar", "boar", "treant"],
     monsterCount: 34,
     ambient: { tint: "#9fe0a0", tintAlpha: 0.05, dark: 0.08, mist: 0.15, fireflies: 0.2 },
     mapColor: "#4f9a46",

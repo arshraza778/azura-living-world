@@ -54,7 +54,7 @@ const DUNGEON1 = [
   "#..m...#....m.....m.....h....m.....#",
   "#......######..##########..........#",
   "#..........X.....X.......###########",
-  "#F.....................X...........#",
+  "#F.....................X..L........#",
   "#####..#####.....#####.........m...#",
   "#$..#..#...#..m..#...#.............#",
   "#...h..#.m.#.....#.$.#....######...#",
@@ -77,11 +77,11 @@ const DUNGEON2 = [
   "#....##################......#",
   "#....#,,,,,,,A,,,,,,,,#...m..#",
   "#....#,,,,,,,,,,,,,,,,#......#",
-  "#....#,,,,,,,W,,,,,,,,#......#",
+  "#....#,,,,,,,G,,,,,,,,#......#",
   "#..$.#,,,,,,,,,,,,,,,,h......#",
   "#..m.#########,,#######..$...#",
   "#............................#",
-  "#F.......m.........m.........#",
+  "#F.......W.........m.........#",
   "##############################",
 ];
 
@@ -126,7 +126,8 @@ function build(o: BuildOpts): Scene {
       ground[i] = o.floor;
       switch (c) {
         case "#": ground[i] = o.wall; solid[i] = 1; break;
-        case "h": ground[i] = o.wall; break; // hidden passage
+        case "h": ground[i] = o.floor; put("rune", false); break; // concealed root-rune passage
+        case "L": ground[i] = o.wall; solid[i] = 1; put("sealeddoor", true); triggers.push({ x: x - 1.1, y: y - 0.35, w: 1.5, h: 1.7, label: "Unlock the rootbound door", action: { type: "keydoor", title: "Rootbound Seal", text: "A living-root lock blocks the passage.", key: "root_key", x, y } }); break;
         case "F": ground[i] = o.wall; solid[i] = 1; put("walltorch", false); lights.push({ x: x + 0.5, y: y + 1, r: 5 }); break;
         case ",": ground[i] = o.id === "guild" ? T.CARPET : T.RITUAL; break;
         case "S": put("shelf", true); break;
@@ -148,11 +149,16 @@ function build(o: BuildOpts): Scene {
           break;
         case "$":
           put("chest", true);
-          triggers.push({ x: x - 1, y: y - 1, w: 3, h: 3, label: "Open chest", action: { type: "chest", id: `${o.id}:${x},${y}`, loot: { azure_potion: 1, herb: 2 }, gold: 30 } });
+          triggers.push({ x: x - 1, y: y - 1, w: 3, h: 3, label: "Open chest", action: { type: "chest", id: `${o.id}:${x},${y}`, loot: o.id.startsWith("dungeon") ? { azure_potion: 1, ancient_shard: 2, iron_sword: 1, root_key: 1 } : { azure_potion: 1, herb: 2 }, gold: o.id.startsWith("dungeon") ? 65 : 30 } });
           break;
         case "X": traps.push({ x, y }); break;
-        case "m": spawns.push({ kind: "skeleton", x: x + 0.5, y: y + 0.5 }); break;
+        case "m": {
+          const dungeonKinds = ["skeleton", "cave_spider", "shadow_goblin", "ancient_skeleton", "root_guardian", "dungeon_wraith"] as const;
+          const kind = o.id === "dungeon1" ? dungeonKinds[(x + y) % 4] : dungeonKinds[(x + y + 2) % dungeonKinds.length];
+          spawns.push({ kind, x: x + 0.5, y: y + 0.5 }); break;
+        }
         case "W": spawns.push({ kind: "hollow_king", x: x + 0.5, y: y + 0.5 }); break;
+        case "G": spawns.push({ kind: "hollowroot_guardian", x: x + 0.5, y: y + 0.5 }); break;
         case "A":
           put("altar", true);
           lights.push({ x: x + 0.5, y: y + 0.5, r: 4 });

@@ -1,0 +1,18 @@
+{
+  "migration": true,
+  "six_attributes": true,
+  "seven_masteries": true,
+  "cancel": true,
+  "pending_refresh": true,
+  "confirm": true,
+  "confirmed_refresh": true,
+  "no_duplicate_rewards": true,
+  "errors": [],
+  "panels": {
+    "Inventory": "PASS",
+    "Crafting \u00b7 Blacksmith & Alchemist": "PASS",
+    "Eldergrove Community Farm": "PASS",
+    "Mission Log": "PASS",
+    "Azura \u2014 World Map": "PASS"
+  }
+}

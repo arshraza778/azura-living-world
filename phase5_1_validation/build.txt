@@ -1,0 +1,71 @@
+
+> build
+> vite build
+
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+vite v8.1.5 building client environment for production...
+
+transforming...✓ 1910 modules transformed.
+rendering chunks...
+computing gzip size...
+.output/public/assets/styles-Cw-W7pCO.css   78.25 kB │ gzip:  13.62 kB
+.output/public/assets/routes-D0zgeyXr.js   130.18 kB │ gzip:  44.26 kB
+.output/public/assets/index-DsW5KU2F.js    369.91 kB │ gzip: 118.33 kB
+
+✓ built in 2.43s
+vite v8.1.5 building ssr environment for production...
+
+transforming...✓ 60 modules transformed.
+rendering chunks...
+computing gzip size...
+node_modules/.nitro/vite/services/ssr/assets/styles-Cw-W7pCO.css                     78.25 kB │ gzip: 13.62 kB
+node_modules/.nitro/vite/services/ssr/assets/empty-plugin-adapters-D9UWiqvJ.js        0.22 kB │ gzip:  0.16 kB
+node_modules/.nitro/vite/services/ssr/assets/routes-Bc4iIie_.js                       0.43 kB │ gzip:  0.30 kB
+node_modules/.nitro/vite/services/ssr/assets/_tanstack-start-manifest_v-CENGbF_H.js   0.48 kB │ gzip:  0.29 kB
+node_modules/.nitro/vite/services/ssr/assets/start-RKGGYzjZ.js                        1.57 kB │ gzip:  0.71 kB
+node_modules/.nitro/vite/services/ssr/assets/createCsrfMiddleware-B2To0gPJ.js         3.19 kB │ gzip:  1.01 kB
+node_modules/.nitro/vite/services/ssr/index.js                                        4.61 kB │ gzip:  1.92 kB
+node_modules/.nitro/vite/services/ssr/assets/router-DjNS9jKb.js                       6.86 kB │ gzip:  2.27 kB
+node_modules/.nitro/vite/services/ssr/assets/server-B6Qm5ee4.js                      66.34 kB │ gzip: 16.95 kB
+
+✓ built in 582ms
+
+[nitro] ◐ Building [Nitro] (preset: cloudflare-module, compatibility: 2026-11-02)
+[nitro] ✔ Generated public .output/public
+vite v8.1.5 building nitro environment for production...
+
+ WARN  inlineDynamicImports option is ignored because the codeSplitting option is specified.
+
+
+transforming...✓ 258 modules transformed.
+rendering chunks...
+computing gzip size...
+.output/server/_ssr/empty-plugin-adapters-D9UWiqvJ.mjs    0.23 kB │ gzip:   0.16 kB
+.output/server/_tanstack-start-manifest_v-CENGbF_H.mjs    0.54 kB │ gzip:   0.32 kB
+.output/server/_chunks/ssr-renderer.mjs                   0.60 kB │ gzip:   0.36 kB
+.output/server/_ssr/routes-Bc4iIie_.mjs                   0.61 kB │ gzip:   0.38 kB
+.output/server/_libs/hookable.mjs                         1.17 kB │ gzip:   0.52 kB
+.output/server/_runtime.mjs                               1.18 kB │ gzip:   0.57 kB
+.output/server/_ssr/start-RKGGYzjZ.mjs                    1.53 kB │ gzip:   0.70 kB
+.output/server/_ssr/createCsrfMiddleware-B2To0gPJ.mjs     3.11 kB │ gzip:   1.01 kB
+.output/server/_ssr/ssr.mjs                               4.55 kB │ gzip:   1.92 kB
+.output/server/_ssr/router-DjNS9jKb.mjs                   7.46 kB │ gzip:   2.37 kB
+.output/server/index.mjs                                  9.69 kB │ gzip:   3.14 kB
+.output/server/_libs/h3-v2+rou3+srvx.mjs                  9.87 kB │ gzip:   3.06 kB
+.output/server/_libs/tanstack__history.mjs               12.50 kB │ gzip:   3.70 kB
+.output/server/_libs/h3+rou3+srvx.mjs                    17.32 kB │ gzip:   4.99 kB
+.output/server/_libs/react+tanstack__react-query.mjs     19.36 kB │ gzip:   5.19 kB
+.output/server/_libs/@tanstack/router-core+[...].mjs     29.82 kB │ gzip:   8.01 kB
+.output/server/_ssr/server-B6Qm5ee4.mjs                  64.72 kB │ gzip:  16.82 kB
+.output/server/_libs/tanstack__query-core.mjs           113.21 kB │ gzip:  26.68 kB
+.output/server/_libs/@tanstack/react-router+[...].mjs   796.54 kB │ gzip: 170.15 kB
+
+✓ built in 1.11s
+[nitro] ℹ Using auto generated worker name: tanstack-start-ts
+ℹ Generated .output/server/wrangler.json
+ℹ Generated .wrangler/deploy/config.json
+ℹ Generated .output/public/_headers
+ℹ Generated .output/nitro.json
+
+[nitro] ✔ You can preview this build using npx vite preview
+[nitro] ✔ You can deploy this build using npx nitro deploy --prebuilt

@@ -478,6 +478,9 @@ export function drawDecor(ctx: Ctx, d: Decor, t: number) {
       ctx.fill();
       break;
     }
+    case "sealeddoor": {
+      ctx.fillStyle = "#302b36"; ctx.fillRect(x - 13, y - 34, 26, 34); ctx.strokeStyle = "#5f9d91"; ctx.lineWidth = 2; ctx.strokeRect(x - 10, y - 31, 20, 28); ctx.beginPath(); ctx.arc(x, y - 18, 4, 0, Math.PI * 2); ctx.stroke(); break;
+    }
     case "rune": {
       ctx.strokeStyle = `rgba(120,220,255,${0.4 + Math.sin(t * 1.5) * 0.25})`;
       ctx.lineWidth = 2;
@@ -785,11 +788,11 @@ export function drawDecor(ctx: Ctx, d: Decor, t: number) {
       ctx.fillStyle = "#8a6a42";
       ctx.fillRect(x - 27, y - 47, 54, 36);
       const papers = [[-22, -44], [-6, -42], [10, -45], [-18, -28], [2, -27], [16, -30]];
-      papers.forEach(([px, py], i) => {
+      papers.forEach(([x, y], i) => {
         ctx.fillStyle = i % 2 ? "#efe4c4" : "#e4d6ae";
-        ctx.fillRect(x + px, y + py, 12, 14);
+        ctx.fillRect(x + x, y + y, 12, 14);
         ctx.fillStyle = "#b03a2a";
-        ctx.fillRect(x + px + 5, y + py - 1, 2, 2);
+        ctx.fillRect(x + x + 5, y + y - 1, 2, 2);
       });
       const glow = 0.4 + Math.sin(t * 3) * 0.2;
       ctx.strokeStyle = `rgba(255,220,120,${glow})`;
@@ -836,6 +839,13 @@ export function drawDecor(ctx: Ctx, d: Decor, t: number) {
         ctx.fillRect(x - 15, y - 30 + i * 7, 30, 7);
       }
       break;
+    }
+    case "sealeddoor": {
+      ctx.fillStyle = "#302b36"; ctx.fillRect(x - 13, y - 34, 26, 34); ctx.strokeStyle = "#5f9d91"; ctx.lineWidth = 2; ctx.strokeRect(x - 10, y - 31, 20, 28); ctx.beginPath(); ctx.arc(x, y - 18, 4, 0, Math.PI * 2); ctx.stroke(); break;
+    }
+    case "rune": {
+      ctx.strokeStyle = `rgba(91,220,215,${0.25 + Math.sin(t * 2 + x) * 0.12})`; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(x - 7, y - 2); ctx.lineTo(x, y - 13); ctx.lineTo(x + 7, y - 2); ctx.moveTo(x - 4, y - 5); ctx.lineTo(x + 4, y - 5); ctx.stroke(); break;
     }
     case "altar": {
       shadow(ctx, x, y, 22, 6);
@@ -992,14 +1002,21 @@ export function drawCharacter(ctx: Ctx, x: number, y: number, dir: Dir, walk: nu
   // hair
   ctx.fillStyle = look.hair;
   ctx.beginPath();
-  if (dir === 3) ctx.arc(px, hy, 8.6, 0, Math.PI * 2);
-  else {
+  if (dir === 3) {
+    ctx.arc(px, hy, 8.6, 0, Math.PI * 2);
+    if (look.hairStyle === "long") ctx.fillRect(px - 7, hy - 1, 14, 12);
+  } else {
     ctx.arc(px, hy - 1, 8.8, Math.PI * 1.02, Math.PI * 1.98);
     ctx.lineTo(px + 9, hy + 2);
     ctx.quadraticCurveTo(px + (dir === 1 ? 8 : 4), hy - 4, px, hy - 4);
     ctx.quadraticCurveTo(px - (dir === 2 ? 8 : 4), hy - 4, px - 9, hy + 2);
+    if (look.hairStyle === "long") { ctx.lineTo(px - 7, hy + 8); ctx.lineTo(px + 7, hy + 8); }
+    if (look.hairStyle === "spiky") { ctx.lineTo(px + 5, hy - 10); ctx.lineTo(px + 1, hy - 6); ctx.lineTo(px - 2, hy - 11); ctx.lineTo(px - 5, hy - 6); }
   }
   ctx.fill();
+  if (look.hairStyle === "ponytail" && dir !== 3) {
+    ctx.beginPath(); ctx.moveTo(px - 5, hy + 2); ctx.quadraticCurveTo(px - 12, hy + 7, px - 8, hy + 13); ctx.lineTo(px - 3, hy + 7); ctx.fill();
+  }
   if (dir !== 3) {
     ctx.fillStyle = "#1a1a2a";
     const ex = dir === 1 ? -3 : dir === 2 ? 3 : 0;
@@ -1080,7 +1097,8 @@ export function drawMonster(ctx: Ctx, kind: MonsterKind, x: number, y: number, t
       ctx.globalAlpha = 1;
       break;
     }
-    case "spiderling": {
+    case "spiderling":
+    case "cave_spider": {
       ctx.strokeStyle = flash ? "#fff" : "#2a1a2a";
       ctx.lineWidth = 2;
       for (let i = 0; i < 4; i++) {
@@ -1092,7 +1110,7 @@ export function drawMonster(ctx: Ctx, kind: MonsterKind, x: number, y: number, t
         ctx.lineTo(px + R + 2, py - R * 0.3 + i * 4 - l);
         ctx.stroke();
       }
-      blob(ctx, px, py - R * 0.6, R * 0.6, flash ? "#fff" : "#9a4ab0", "#3a1a4a");
+      blob(ctx, px, py - R * 0.6, R * 0.6, flash ? "#fff" : kind === "cave_spider" ? "#436a78" : "#9a4ab0", "#3a1a4a");
       ctx.fillStyle = "#ff5050";
       ctx.fillRect(px - 4, py - R * 0.8, 2, 2);
       ctx.fillRect(px + 2, py - R * 0.8, 2, 2);
@@ -1126,9 +1144,65 @@ export function drawMonster(ctx: Ctx, kind: MonsterKind, x: number, y: number, t
       ctx.fillRect(px - 3, py - R * 1.2, 6, 10);
       break;
     }
+    case "goblin":
+    case "shadow_goblin": {
+      const bob = Math.sin(t * 7) * 2;
+      ctx.fillStyle = flash ? "#fff" : kind === "shadow_goblin" ? "#342b48" : "#65934c";
+      ctx.beginPath(); ctx.ellipse(px, py - R * 1.0 + bob, R * 0.55, R * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = flash ? "#fff" : kind === "shadow_goblin" ? "#55456c" : "#8bb85b";
+      ctx.beginPath(); ctx.arc(px, py - R * 1.8 + bob, R * 0.48, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#7b4d2d"; ctx.beginPath(); ctx.moveTo(px - R * 0.35, py - R * 2.0 + bob); ctx.lineTo(px - R * 0.95, py - R * 2.5 + bob); ctx.lineTo(px - R * 0.65, py - R * 1.75 + bob); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(px + R * 0.35, py - R * 2.0 + bob); ctx.lineTo(px + R * 0.95, py - R * 2.5 + bob); ctx.lineTo(px + R * 0.65, py - R * 1.75 + bob); ctx.fill();
+      ctx.fillStyle = "#f6df7b"; ctx.fillRect(px - 6, py - R * 1.9 + bob, 3, 3); ctx.fillRect(px + 3, py - R * 1.9 + bob, 3, 3);
+      ctx.fillStyle = "#6b4530"; ctx.fillRect(px - R * 0.42, py - R * 0.55, R * 0.84, R * 0.22);
+      break;
+    }
+    case "boar": {
+      const charge = Math.sin(t * 11) * 2;
+      ctx.fillStyle = flash ? "#fff" : "#80513b";
+      ctx.beginPath(); ctx.ellipse(px, py - R * 0.62, R * 1.0, R * 0.56, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = flash ? "#fff" : "#9b6b4b";
+      ctx.beginPath(); ctx.ellipse(px + R * 0.65 + charge, py - R * 0.82, R * 0.45, R * 0.38, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#f3e7cb"; ctx.beginPath(); ctx.moveTo(px + R * 0.72 + charge, py - R * 0.55); ctx.lineTo(px + R * 1.0 + charge, py - R * 0.2); ctx.lineTo(px + R * 0.85 + charge, py - R * 0.6); ctx.fill();
+      ctx.fillStyle = "#201a18"; ctx.fillRect(px + R * 0.82 + charge, py - R * 0.95, 3, 3);
+      ctx.fillStyle = "#503323"; ctx.fillRect(px - R * 0.6, py - R * 0.25, 5, R * 0.32); ctx.fillRect(px + R * 0.3, py - R * 0.25, 5, R * 0.32);
+      break;
+    }
+    case "treant":
+    case "root_guardian": {
+      const sway = Math.sin(t * 1.7) * 3;
+      ctx.fillStyle = flash ? "#fff" : kind === "root_guardian" ? "#3d5960" : "#60432b"; ctx.fillRect(px - R * 0.42, py - R * 1.55, R * 0.84, R * 1.5);
+      ctx.fillStyle = flash ? "#fff" : kind === "root_guardian" ? "#2c6b68" : "#4c7838";
+      ctx.beginPath(); ctx.arc(px + sway, py - R * 1.85, R * 0.85, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(px - R * 0.45 + sway, py - R * 2.2, R * 0.48, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(px + R * 0.45 + sway, py - R * 2.18, R * 0.5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = flash ? "#fff" : kind === "root_guardian" ? "#3d5960" : "#60432b"; ctx.lineWidth = Math.max(3, R * 0.22);
+      ctx.beginPath(); ctx.moveTo(px - R * 0.25, py - R * 1.35); ctx.lineTo(px - R * 0.9, py - R * 0.8 + sway); ctx.moveTo(px + R * 0.25, py - R * 1.35); ctx.lineTo(px + R * 0.9, py - R * 0.8 - sway); ctx.stroke();
+      ctx.fillStyle = "#d8b95f"; ctx.fillRect(px - 7, py - R * 2.0, 4, 4); ctx.fillRect(px + 3, py - R * 2.0, 4, 4);
+      break;
+    }
+    case "hollowroot_guardian": {
+      const pulse = 0.7 + Math.sin(t * 2.4) * 0.18;
+      ctx.fillStyle = flash ? "#fff" : "#344c48";
+      ctx.beginPath(); ctx.moveTo(px - R * 0.85, py); ctx.lineTo(px - R * 0.55, py - R * 1.7); ctx.lineTo(px - R * 0.2, py - R * 2.2); ctx.lineTo(px + R * 0.45, py - R * 1.8); ctx.lineTo(px + R * 0.9, py); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = flash ? "#fff" : "#594936"; ctx.lineWidth = Math.max(4, R * 0.22);
+      for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(px + i * R * 0.35, py - R * 1.5); ctx.lineTo(px + i * R * 1.05, py - R * (0.7 + Math.sin(t * 2 + i) * 0.1)); ctx.stroke(); }
+      ctx.fillStyle = `rgba(49,230,205,${pulse})`; ctx.shadowColor = "#31e6cd"; ctx.shadowBlur = 18;
+      ctx.fillRect(px - R * 0.34, py - R * 1.8, R * 0.18, R * 0.1); ctx.fillRect(px + R * 0.16, py - R * 1.8, R * 0.18, R * 0.1);
+      ctx.shadowBlur = 0; ctx.fillStyle = "#80b9aa"; ctx.beginPath(); ctx.arc(px, py - R * 1.4, R * 0.2, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
     case "skeleton":
-    case "hollow_king": {
+    case "ancient_skeleton":
+    case "hollow_king":
+    case "dungeon_wraith": {
       const king = kind === "hollow_king";
+      if (kind === "dungeon_wraith") {
+        ctx.globalAlpha = 0.78;
+        ctx.fillStyle = flash ? "#fff" : "#253d66";
+        ctx.beginPath(); ctx.moveTo(px, py - R * 2.5); ctx.quadraticCurveTo(px + R, py - R * 1.4, px + R * 0.6, py); ctx.lineTo(px - R * 0.6, py); ctx.quadraticCurveTo(px - R, py - R * 1.4, px, py - R * 2.5); ctx.fill();
+        ctx.fillStyle = "#6df6ff"; ctx.fillRect(px - 6, py - R * 1.9, 4, 4); ctx.fillRect(px + 2, py - R * 1.9, 4, 4); ctx.globalAlpha = 1;
+      }
       const sw = Math.sin(t * 8) * 2;
       if (king) {
         ctx.fillStyle = "rgba(140,60,200,0.25)";
@@ -1177,7 +1251,7 @@ export function drawMonster(ctx: Ctx, kind: MonsterKind, x: number, y: number, t
     const w = Math.max(26, R * 1.6);
     ctx.fillStyle = "rgba(0,0,0,0.6)";
     ctx.fillRect(px - w / 2, py - R * 2.4 - 8, w, 5);
-    ctx.fillStyle = kind === "hollow_king" ? "#c040ff" : "#e04848";
+    ctx.fillStyle = (kind === "hollow_king" || kind === "hollowroot_guardian") ? "#40d8bd" : "#e04848";
     ctx.fillRect(px - w / 2 + 1, py - R * 2.4 - 7, (w - 2) * hpFrac, 3);
   }
 }

@@ -10,7 +10,16 @@ export type MonsterKind =
   | "golem"
   | "shade"
   | "skeleton"
-  | "hollow_king";
+  | "hollow_king"
+  | "goblin"
+  | "boar"
+  | "treant"
+  | "cave_spider"
+  | "shadow_goblin"
+  | "ancient_skeleton"
+  | "root_guardian"
+  | "dungeon_wraith"
+  | "hollowroot_guardian";
 
 export interface Look {
   skin: string;
@@ -38,7 +47,8 @@ export type Action =
   | { type: "rest"; price: number }
   | { type: "inspect"; title: string; text: string }
   | { type: "chest"; id: string; loot: Record<string, number>; gold: number }
-  | { type: "locked"; title: string; text: string };
+  | { type: "locked"; title: string; text: string }
+  | { type: "keydoor"; title: string; text: string; key: string; x: number; y: number };
 
 export interface Trigger {
   x: number;
@@ -49,7 +59,7 @@ export interface Trigger {
   action: Action;
 }
 
-export type NpcRole = "receptionist" | "merchant" | "innkeeper" | "trainer" | "villager";
+export type NpcRole = "receptionist" | "merchant" | "innkeeper" | "trainer" | "villager" | "blacksmith" | "alchemist";
 
 export interface NPC {
   id: string;

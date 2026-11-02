@@ -1,13 +1,15 @@
 import type { Dir, MonsterKind, NPC, Scene, SceneId, Trigger } from "../core/types";
 import { MONSTERS } from "../data/monsters";
-import { PLAYER_LOOK, POIS } from "../data/places";
+import { lookFor, POIS } from "../data/places";
 import { REGIONS, TILE } from "../data/regions";
 import { ITEMS } from "../data/items";
 import { CHUNK, drawCharacter, drawDecor, drawMonster, drawTraps, drawWaterFx, getChunk, trapUp } from "../render/draw";
 import { getScene } from "../world/scenes";
-import { addItem, addXp, checkMissionReadiness, emit, game, openDialogue, openPanel, save, toast } from "../state/store";
+import { addItem, addXp, attackPower, checkMissionReadiness, emit, game, openDialogue, openPanel, save, toast, gatherResource, addMasteryXp, statEffects, incomingDamage, staminaCost } from "../state/store";
 
 interface Monster { kind: MonsterKind; x: number; y: number; hx: number; hy: number; hp: number; cd: number; hurt: number; dead: number; t: number; wx: number; wy: number }
+interface GroundDrop { id: string; x: number; y: number; amount: number; age: number; scene: SceneId }
+interface ResourceNode { id: string; item: string; x: number; y: number; icon: string; respawn: number; cooldown: number }
 
 export class Engine {
   canvas: HTMLCanvasElement;
@@ -27,7 +29,13 @@ export class Engine {
   emitT = 0;
   saveT = 0;
   tint = { dark: 0 };
-  target: { npc?: NPC; trig?: Trigger } | null = null;
+  target: { npc?: NPC; trig?: Trigger; drop?: GroundDrop; resource?: ResourceNode } | null = null;
+  drops: GroundDrop[] = [];
+  resources = new Map<SceneId, ResourceNode[]>();
+  gatherTimer = 0;
+  gatherTimeout: number | undefined;
+  dodge = 0;
+  deathTimer = 0;
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d")!;
@@ -35,12 +43,15 @@ export class Engine {
     this.enter(p.scene, p.x, p.y, true);
     window.addEventListener("keydown", this.kd);
     window.addEventListener("keyup", this.ku);
+    this.canvas.addEventListener("click", this.mc);
     this.raf = requestAnimationFrame(this.loop);
   }
   destroy() {
     cancelAnimationFrame(this.raf);
+    window.clearTimeout(this.gatherTimeout);
     window.removeEventListener("keydown", this.kd);
     window.removeEventListener("keyup", this.ku);
+    this.canvas.removeEventListener("click", this.mc);
   }
   kd = (e: KeyboardEvent) => {
     const k = e.key.toLowerCase();
@@ -50,17 +61,32 @@ export class Engine {
     if (k === "i") return openPanel("inventory");
     if (k === "c") return openPanel("character");
     if (k === "j" || k === "q") return openPanel("quests");
+    if (k === "k") return openPanel("crafting");
+    if (k === "v") return openPanel("farming");
     if (game.ui.panel) return;
     if (k === "e") this.interact();
-    if (k === " ") this.attack();
+    if (k === " ") this.evade();
+    if (k === "f") this.attack();
     this.keys.add(k);
   };
   ku = (e: KeyboardEvent) => this.keys.delete(e.key.toLowerCase());
+  mc = () => { if (!game.ui.panel && this.scene.id !== "guild" && this.scene.id !== "inn" && this.scene.id !== "cottage") this.attack(); };
 
   enter(id: SceneId, x: number, y: number, initial = false) {
     this.scene = getScene(id);
+    for (const trigger of [...this.scene.triggers]) {
+      if (trigger.action.type === "keydoor") {
+        const a = trigger.action, marker = `door:${id}:${a.x},${a.y}`;
+        if (game.data.openedChests.includes(marker)) {
+          this.scene.solid[a.y * this.scene.w + a.x] = 0;
+          this.scene.decor = this.scene.decor.filter((deco) => !(deco.kind === "sealeddoor" && Math.floor(deco.x) === a.x && Math.floor(deco.y) === a.y));
+          this.scene.triggers = this.scene.triggers.filter((tr) => tr.action !== a);
+        }
+      }
+    }
     if (x < 0) ({ x, y } = this.scene.spawn);
     game.data.pos = { scene: id, x, y };
+    if (!this.resources.has(id)) this.resources.set(id, this.makeResources(id));
     if (!this.monsters.has(id))
       this.monsters.set(id, this.scene.spawns.map((s) => ({ kind: s.kind, x: s.x, y: s.y, hx: s.x, hy: s.y, hp: MONSTERS[s.kind].hp, cd: 0, hurt: 0, dead: 0, t: 0, wx: s.x, wy: s.y })));
     game.ui.sceneName = this.scene.name;
@@ -68,6 +94,31 @@ export class Engine {
     if (id !== "overworld") game.ui.banner = { title: this.scene.name, sub: id === "guild" ? "Eldergrove" : "Hollowroot Dungeon", danger: id === "guild" ? 1 : 4, key: Date.now() };
     if (!initial) { game.ui.fade = 1; save(); }
     emit();
+  }
+
+  makeResources(id: SceneId): ResourceNode[] {
+    if (id !== "overworld") return [];
+    const s = this.scene, nodes: ResourceNode[] = [];
+    const types = [
+      { item: "wood", icon: "🪵", region: "verdant", count: 10 },
+      { item: "stone", icon: "🪨", region: "verdant", count: 5 },
+      { item: "iron_ore", icon: "⛏️", region: "thornveil", count: 4 },
+      { item: "copper_ore", icon: "🟠", region: "thornveil", count: 3 },
+      { item: "herb", icon: "🌿", region: "verdant", count: 7 },
+      { item: "mushroom", icon: "🍄", region: "thornveil", count: 5 },
+      { item: "rare_herb", icon: "🌸", region: "thornveil", count: 2 },
+    ];
+    let seed = 731;
+    const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    for (const type of types) {
+      const ri = REGIONS.findIndex(r => r.id === type.region); let made = 0, tries = 0;
+      while (made < type.count && tries++ < 3000) {
+        const x = Math.floor(rand() * (s.w - 4)) + 2, y = Math.floor(rand() * (s.h - 4)) + 2;
+        if (s.region?.[y * s.w + x] !== ri || this.solidAt(x, y) || Math.hypot(x - game.data.pos.x, y - game.data.pos.y) < 9) continue;
+        nodes.push({ id: `${type.item}-${made}-${nodes.length}`, item: type.item, x: x + .5, y: y + .5, icon: type.icon, respawn: 90, cooldown: Math.max(0, ((game.data.growth.resourceReadyAt[`${id}:${type.item}-${made}-${nodes.length}`] ?? 0) - Date.now()) / 1000) }); made++;
+      }
+    }
+    return nodes;
   }
 
   solidAt(x: number, y: number) {
@@ -83,7 +134,9 @@ export class Engine {
   discoverPoi(id: string, name: string) {
     if (game.data.discoveredPois.includes(id)) return;
     game.data.discoveredPois.push(id);
+    if (id === "hollowroot_depths" && !game.data.discoveredRecipes?.includes("iron_sword")) { game.data.discoveredRecipes ??= []; game.data.discoveredRecipes.push("iron_sword"); toast("Recipe discovered: Ironbark Sword.", "gold"); }
     toast(`Discovered: ${name}`, "gold");
+    addMasteryXp("exploration", 15);
     addXp(10);
     checkMissionReadiness();
     save();
@@ -92,6 +145,34 @@ export class Engine {
   interact() {
     const tg = this.target;
     if (!tg) return;
+    if ((tg as any).resource) {
+      const node = (tg as any).resource as ResourceNode;
+      if (node.cooldown > 0) return toast("This resource is regrowing.", "info");
+      if (node.item === "wood" || node.item === "branch") {
+        if (!game.data.inventory["axe"]) return toast("You need an axe to harvest this tree.", "bad");
+      }
+      if (["stone", "iron_ore", "copper_ore"].includes(node.item) && !game.data.inventory["pickaxe"]) return toast("You need a pickaxe to mine this deposit.", "bad");
+      if (this.gatherTimer > 0) return;
+      this.gatherTimer = 0.9 * statEffects(game.data).gatheringTime;
+      const nodeRef = node, sceneId = this.scene.id;
+      this.gatherTimeout = window.setTimeout(() => {
+        this.gatherTimer = 0;
+        if (this.scene.id !== sceneId || game.data.hp <= 0 || Math.hypot(game.data.pos.x-nodeRef.x, game.data.pos.y-nodeRef.y) > 2.2) return;
+        nodeRef.cooldown = nodeRef.respawn;
+        game.data.growth.resourceReadyAt[`${sceneId}:${nodeRef.id}`] = Date.now() + nodeRef.respawn * 1000;
+        gatherResource(nodeRef.item, nodeRef.item === "wood" ? 2 : 1);
+        this.target = null; game.ui.prompt = null; emit();
+      }, this.gatherTimer * 1000);
+      toast("Gathering…", "info"); return;
+    }
+    if (tg.drop) {
+      addItem(tg.drop.id, tg.drop.amount);
+      this.drops = this.drops.filter((drop) => drop !== tg.drop);
+      checkMissionReadiness();
+      toast(`Collected ${tg.drop.amount}× ${ITEMS[tg.drop.id]?.name ?? tg.drop.id}.`, "good");
+      save(); emit();
+      return;
+    }
     if (tg.npc) {
       const n = tg.npc;
       openDialogue({ name: n.name, title: n.title, lines: n.lines, role: n.role });
@@ -101,6 +182,16 @@ export class Engine {
     if (a.type === "scene") this.enter(a.to, a.x, a.y);
     else if (a.type === "board") openPanel("guild");
     else if (a.type === "inspect" || a.type === "locked") openDialogue({ name: a.title, lines: [a.text], role: "info" });
+    else if (a.type === "keydoor") {
+      if (!game.data.inventory[a.key]) return toast("The seal needs a Rootbound Key. Search the treasure chests.", "bad");
+      game.data.inventory[a.key]--;
+      if (game.data.inventory[a.key] <= 0) delete game.data.inventory[a.key];
+      this.scene.solid[a.y * this.scene.w + a.x] = 0;
+      game.data.openedChests.push(`door:${this.scene.id}:${a.x},${a.y}`);
+      this.scene.decor = this.scene.decor.filter((deco) => !(deco.kind === "sealeddoor" && Math.floor(deco.x) === a.x && Math.floor(deco.y) === a.y));
+      this.scene.triggers = this.scene.triggers.filter((tr) => tr.action !== a);
+      toast("The Rootbound Key turns. The secret passage opens.", "gold"); save(); emit();
+    }
     else if (a.type === "chest") {
       if (game.data.openedChests.includes(a.id)) return toast("It's empty now.");
       game.data.openedChests.push(a.id);
@@ -111,12 +202,23 @@ export class Engine {
     }
   }
 
+  evade() {
+    const d = game.data;
+    if (this.dodge > 0 || d.stamina < staminaCost(d, 18, true)) return;
+    d.stamina -= staminaCost(d, 18, true); this.dodge = 0.28;
+    const [fx, fy] = [[0, 1], [-1, 0], [1, 0], [0, -1]][this.dir];
+    const nx = d.pos.x - fx * 1.15, ny = d.pos.y - fy * 1.15;
+    if (!this.blocked(nx, d.pos.y)) d.pos.x = nx;
+    if (!this.blocked(d.pos.x, ny)) d.pos.y = ny;
+    this.hurt = -0.22; save(); emit();
+  }
+
   attack() {
     const d = game.data;
-    if (this.atkCd > 0 || d.stamina < 6) return;
-    d.stamina -= 6;
+    if (this.atkCd > 0 || d.stamina < staminaCost(d, 6)) return;
+    d.stamina -= staminaCost(d, 6);
     this.atk = 1;
-    this.atkCd = 0.38;
+    this.atkCd = 0.38 * statEffects(d).attackInterval;
     const p = d.pos;
     const [fx, fy] = [[0, 1], [-1, 0], [1, 0], [0, -1]][this.dir];
     for (const m of this.monsters.get(this.scene.id) ?? []) {
@@ -124,17 +226,24 @@ export class Engine {
       const def = MONSTERS[m.kind];
       const dx = m.x - (p.x + fx * 0.6), dy = m.y - (p.y + fy * 0.6);
       if (Math.hypot(dx, dy) > 1.1 + def.size) continue;
-      m.hp -= 8 + d.level * 3;
+      m.hp -= attackPower(d);
       m.hurt = 0.15;
       m.x += fx * 0.4; m.y += fy * 0.4;
       if (this.blocked(m.x, m.y)) { m.x -= fx * 0.4; m.y -= fy * 0.4; }
       if (m.hp <= 0) {
         m.dead = def.respawn;
         d.kills[m.kind] = (d.kills[m.kind] ?? 0) + 1;
+        addMasteryXp("combat", Math.max(4, Math.min(25, def.xp)), 3000);
         addXp(def.xp);
         d.gold += def.gold;
-        addItem(def.drop);
-        toast(`${def.name} defeated · +${def.xp} XP · ${ITEMS[def.drop].name}`, def.boss ? "gold" : "good");
+        this.drops.push({ id: def.drop, x: m.x, y: m.y, amount: 1, age: 0, scene: this.scene.id });
+        if (m.kind === "hollowroot_guardian") {
+          this.drops.push({ id: "deepwarden_mail", x: m.x + 0.35, y: m.y + 0.15, amount: 1, age: 0, scene: this.scene.id });
+          this.drops.push({ id: "crystal_charm", x: m.x - 0.35, y: m.y + 0.15, amount: 1, age: 0, scene: this.scene.id });
+          toast("The Hollowroot Guardian falls! Its core and ancient treasures scatter across the chamber.", "gold");
+        }
+        if (Math.random() < 0.22) this.drops.push({ id: Math.random() < 0.6 ? "apple" : "healing_potion", x: m.x + 0.35, y: m.y + 0.2, amount: 1, age: 0, scene: this.scene.id });
+        toast(`${def.name} defeated · +${def.xp} XP · loot dropped nearby`, def.boss ? "gold" : "good");
         checkMissionReadiness();
         save();
       }
@@ -154,10 +263,20 @@ export class Engine {
     const d = game.data;
     const p = d.pos;
     const paused = !!game.ui.panel;
+    if (this.deathTimer > 0) {
+      this.deathTimer = Math.max(0, this.deathTimer - dt);
+      if (this.deathTimer === 0) {
+        d.hp = Math.round(d.maxHp * 0.5); d.stamina = d.maxStamina; d.hunger = Math.max(d.hunger, 40);
+        d.gold = Math.floor(d.gold * 0.9);
+        this.enter("overworld", 106, 77);
+        toast("Reincarnated in Eldergrove. Level, experience and inventory preserved; 10% gold lost.", "good");
+        save();
+      }
+    }
     if (game.ui.fade > 0) game.ui.fade = Math.max(0, game.ui.fade - dt * 2);
     this.atk = Math.max(0, this.atk - dt * 4);
-    this.atkCd -= dt; this.hurt -= dt; this.trapCd -= dt;
-    if (!paused) {
+    this.atkCd -= dt; this.hurt -= dt; this.trapCd -= dt; this.dodge = Math.max(0, this.dodge - dt);
+    if (!paused && this.deathTimer <= 0) {
       let vx = 0, vy = 0;
       const k = this.keys;
       if (k.has("a") || k.has("arrowleft")) vx--;
@@ -168,15 +287,15 @@ export class Engine {
       const sprint = k.has("shift") && d.stamina > 1 && moving;
       if (moving) {
         const l = Math.hypot(vx, vy);
-        const sp = 4.2 * (sprint ? 1.6 : 1) * dt;
+        const sp = 4.2 * statEffects(d).movement * (sprint ? 1.6 : 1) * dt;
         const nx = p.x + (vx / l) * sp, ny = p.y + (vy / l) * sp;
         if (!this.blocked(nx, p.y)) p.x = nx;
         if (!this.blocked(p.x, ny)) p.y = ny;
         this.dir = Math.abs(vx) > Math.abs(vy) ? (vx < 0 ? 1 : 2) : vy < 0 ? 3 : 0;
         this.walk += dt * (sprint ? 1.5 : 1);
       }
-      d.stamina = sprint ? Math.max(0, d.stamina - 25 * dt) : Math.min(d.maxStamina, d.stamina + 14 * dt);
-      d.hunger = Math.max(0, d.hunger - 0.18 * dt);
+      d.stamina = sprint ? Math.max(0, d.stamina - staminaCost(d, 25) * dt) : Math.min(d.maxStamina, d.stamina + 14 * dt);
+      d.hunger = Math.max(0, d.hunger - 0.18 * statEffects(d).hunger * dt);
       if (d.hunger <= 0) d.hp -= 1 * dt;
       else if (d.hunger > 40) d.hp = Math.min(d.maxHp, d.hp + 0.6 * dt);
 
@@ -191,6 +310,7 @@ export class Engine {
           if (!d.discoveredRegions.includes(r.id)) {
             d.discoveredRegions.push(r.id);
             toast(`New region discovered: ${r.name}`, "gold");
+            addMasteryXp("exploration", 20);
             addXp(25);
             checkMissionReadiness();
             save();
@@ -204,17 +324,24 @@ export class Engine {
         if (Math.floor(p.x) === tr.x && Math.floor(p.y) === tr.y && trapUp(tr.x, tr.y, this.t) && this.trapCd <= 0) {
           d.hp -= 8; this.trapCd = 0.8; this.hurt = 0.2; toast("Spike trap!", "bad");
         }
-      // npcs
+      // NPCs with authored paths patrol them; other wandering villagers roam near home.
       for (const n of s.npcs) {
-        if (!n.wander) continue;
         n.wait -= dt;
-        if (n.wait <= 0 && n.tx === undefined) { n.tx = n.homeX + (Math.random() - 0.5) * 6; n.ty = n.homeY + (Math.random() - 0.5) * 4; }
+        if (n.path?.length) {
+          if (n.tx === undefined && n.wait <= 0) { const [tx, ty] = n.path[n.pathI % n.path.length]; n.tx = tx; n.ty = ty; }
+        } else if (n.wander && n.wait <= 0 && n.tx === undefined) {
+          n.tx = n.homeX + (Math.random() - 0.5) * 6; n.ty = n.homeY + (Math.random() - 0.5) * 4;
+        }
         if (n.tx !== undefined && n.ty !== undefined) {
           const dx = n.tx - n.x, dy = n.ty - n.y, l = Math.hypot(dx, dy);
-          if (l < 0.1) { n.tx = undefined; n.wait = 2 + Math.random() * 3; }
-          else {
-            const nx = n.x + (dx / l) * 1.3 * dt, ny = n.y + (dy / l) * 1.3 * dt;
-            if (this.blocked(nx, ny)) { n.tx = undefined; n.wait = 1; } else { n.x = nx; n.y = ny; n.walk += dt; n.dir = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 1 : 2) : dy < 0 ? 3 : 0; }
+          if (l < 0.12) {
+            n.tx = undefined; n.ty = undefined; n.wait = n.path?.length ? 0.35 : 2 + Math.random() * 3;
+            if (n.path?.length) n.pathI = (n.pathI + 1) % n.path.length;
+          } else {
+            const speed = n.path?.length ? 1.15 : 1.0;
+            const nx = n.x + (dx / l) * speed * dt, ny = n.y + (dy / l) * speed * dt;
+            if (this.blocked(nx, ny)) { n.tx = undefined; n.ty = undefined; n.wait = 1; if (n.path?.length) n.pathI = (n.pathI + 1) % n.path.length; }
+            else { n.x = nx; n.y = ny; n.walk += dt; n.dir = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 1 : 2) : dy < 0 ? 3 : 0; }
           }
         }
       }
@@ -233,21 +360,33 @@ export class Engine {
           if (!this.blocked(nx, m.y, 0.25)) m.x = nx; else m.wx = m.x;
           if (!this.blocked(m.x, ny, 0.25)) m.y = ny; else m.wy = m.y;
         }
-        if (dist < def.size + 0.45 && m.cd <= 0) { d.hp -= def.dmg; m.cd = 1.1; this.hurt = 0.2; }
+        if (dist < def.size + (m.kind === "hollowroot_guardian" ? 0.95 : 0.45) && m.cd <= 0) {
+          const phaseTwo = m.kind === "hollowroot_guardian" && m.hp < MONSTERS[m.kind].hp * 0.5;
+          const aoe = m.kind === "hollowroot_guardian" && m.hp < MONSTERS[m.kind].hp * 0.72;
+          const attackRange = aoe ? 3.1 : def.size + 0.45;
+          if (dist < attackRange && this.dodge <= 0) {
+            d.hp -= incomingDamage(d, def.dmg);
+            this.hurt = 0.2;
+            if (phaseTwo && dist < 2.2) { d.hp -= incomingDamage(d, def.dmg * .45, .5); toast("The Guardian's root shockwave hits you!", "bad"); }
+          }
+          m.cd = m.kind === "hollowroot_guardian" ? (phaseTwo ? 1.55 : 2.0) : 1.1;
+        }
       }
       // interaction target
+      this.drops.forEach((drop) => { drop.age += dt; });
       let best: Engine["target"] = null, bd = 1.7;
+      for (const drop of this.drops) { if (drop.scene !== s.id) continue; const dd = Math.hypot(drop.x - p.x, drop.y - p.y); if (dd < bd) { bd = dd; best = { drop }; } }
+      for (const node of this.resources.get(s.id) ?? []) { node.cooldown = Math.max(0, node.cooldown - dt); if (node.cooldown > 0) continue; const dd = Math.hypot(node.x - p.x, node.y - p.y); if (dd < bd) { bd = dd; best = { resource: node } as any; } }
       for (const n of s.npcs) { const dd = Math.hypot(n.x - p.x, n.y - p.y); if (dd < bd) { bd = dd; best = { npc: n }; } }
       if (!best) for (const tr of s.triggers) if (p.x >= tr.x && p.x <= tr.x + tr.w && p.y >= tr.y && p.y <= tr.y + tr.h) { best = { trig: tr }; break; }
       this.target = best;
-      const prompt = best ? (best.npc ? `Talk to ${best.npc.name}` : best.trig!.label) : null;
+      const prompt = best ? ((best as any).resource ? `Gather ${ITEMS[(best as any).resource.item]?.name ?? (best as any).resource.item}` : best.drop ? `Collect ${ITEMS[best.drop.id]?.name ?? best.drop.id}` : best.npc ? `Talk to ${best.npc.name}` : best.trig!.label) : null;
       if (prompt !== game.ui.prompt) { game.ui.prompt = prompt; emit(); }
       // death
-      if (d.hp <= 0) {
-        d.hp = Math.round(d.maxHp * 0.5); d.hunger = Math.max(d.hunger, 40);
-        d.gold = Math.floor(d.gold * 0.9);
-        toast("You collapsed… and woke in Eldergrove.", "bad");
-        this.enter("overworld", 106, 77);
+      if (d.hp <= 0 && this.deathTimer <= 0) {
+        this.deathTimer = 1.25;
+        this.drops = [];
+        toast("You have fallen… reincarnation begins.", "bad");
       }
     }
     const targetDark = this.scene.region ? REGIONS.find((r) => r.id === game.ui.regionId)?.ambient.dark ?? 0 : this.scene.dark;
@@ -288,8 +427,16 @@ export class Engine {
       items.push({ y: d.y, f: () => drawDecor(ctx, d, this.t) });
     }
     for (const n of s.npcs) items.push({ y: n.y, f: () => drawCharacter(ctx, n.x, n.y, n.dir, n.walk, n.look) });
-    for (const m of this.monsters.get(s.id) ?? []) if (m.dead <= 0) items.push({ y: m.y, f: () => drawMonster(ctx, m.kind, m.x, m.y, m.t, m.hurt, m.hp / MONSTERS[m.kind].hp, MONSTERS[m.kind].size) });
-    items.push({ y: p.y, f: () => drawCharacter(ctx, p.x, p.y, this.dir, this.walk, PLAYER_LOOK, this.atk, this.hurt) });
+    for (const m of this.monsters.get(s.id) ?? []) if (m.dead <= 0) items.push({ y: m.y, f: () => {
+      drawMonster(ctx, m.kind, m.x, m.y, m.t, m.hurt, m.hp / MONSTERS[m.kind].hp, MONSTERS[m.kind].size);
+      if (m.kind === "hollowroot_guardian" && m.cd > 0 && m.cd < 0.42) {
+        ctx.save(); ctx.strokeStyle = `rgba(70,235,210,${0.45 + Math.sin(this.t * 18) * 0.3})`; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.ellipse(m.x * TILE, m.y * TILE, TILE * (1.2 + (0.42 - m.cd) * 3), TILE * (0.65 + (0.42 - m.cd) * 2), 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+      }
+    } });
+    for (const node of this.resources.get(s.id) ?? []) if (node.cooldown <= 0) items.push({ y: node.y, f: () => { ctx.save(); ctx.globalAlpha = .92; ctx.font = "19px sans-serif"; ctx.textAlign = "center"; ctx.shadowColor = "#b6f2a2"; ctx.shadowBlur = 9; ctx.fillText(node.icon, node.x * TILE, node.y * TILE - 8); ctx.restore(); } });
+    for (const drop of this.drops) if (drop.scene === s.id) items.push({ y: drop.y + 0.02, f: () => { const def = ITEMS[drop.id]; ctx.save(); ctx.fillStyle = "rgba(12,18,16,0.72)"; ctx.beginPath(); ctx.ellipse(drop.x * TILE, drop.y * TILE - 5, 13, 8, 0, 0, Math.PI * 2); ctx.fill(); ctx.font = "18px sans-serif"; ctx.textAlign = "center"; ctx.fillText(def?.icon ?? "✦", drop.x * TILE, drop.y * TILE - 10 - Math.sin(this.t * 3 + drop.x) * 2); ctx.restore(); } });
+    items.push({ y: p.y, f: () => drawCharacter(ctx, p.x, p.y, this.dir, this.walk, lookFor(game.data.appearance), this.atk, this.hurt) });
     items.sort((a, b) => a.y - b.y).forEach((i) => i.f());
     // lighting
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -329,6 +476,19 @@ export class Engine {
     v.addColorStop(0, "rgba(0,0,0,0)"); v.addColorStop(1, "rgba(0,0,0,0.45)");
     ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
     if (this.hurt > 0) { ctx.fillStyle = `rgba(200,20,20,${this.hurt})`; ctx.fillRect(0, 0, W, H); }
+    const boss = (this.monsters.get(s.id) ?? []).find((m) => m.kind === "hollowroot_guardian" && m.dead <= 0);
+    if (boss) {
+      const bw = Math.min(520, W * 0.58), bx = (W - bw) / 2, by = 82;
+      ctx.fillStyle = "rgba(8,12,16,0.82)"; ctx.fillRect(bx - 12, by - 26, bw + 24, 46);
+      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.font = "bold 14px Georgia, serif"; ctx.fillStyle = "#b9eee1"; ctx.fillText("THE HOLLOWROOT GUARDIAN", W / 2, by - 15);
+      ctx.fillStyle = "#25302f"; ctx.fillRect(bx, by, bw, 10); ctx.fillStyle = boss.hp < MONSTERS[boss.kind].hp * 0.5 ? "#43d6c0" : "#267e74"; ctx.fillRect(bx + 1, by + 1, (bw - 2) * Math.max(0, boss.hp / MONSTERS[boss.kind].hp), 8);
+    }
+    if (this.deathTimer > 0) {
+      ctx.fillStyle = `rgba(8,7,16,${Math.min(0.88, 0.62 + (1.25 - this.deathTimer) * 0.18)})`; ctx.fillRect(0, 0, W, H);
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = "#e8c982"; ctx.font = "bold 30px Georgia, serif"; ctx.fillText("FALLEN IN THE WILDS", W / 2, H / 2 - 22);
+      ctx.fillStyle = "#f0e7d2"; ctx.font = "16px Georgia, serif"; ctx.fillText("The spirit returns to Eldergrove…", W / 2, H / 2 + 18);
+    }
     if (game.ui.fade > 0) { ctx.fillStyle = `rgba(0,0,0,${game.ui.fade})`; ctx.fillRect(0, 0, W, H); }
   }
 }

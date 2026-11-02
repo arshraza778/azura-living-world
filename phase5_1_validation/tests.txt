@@ -1,0 +1,13 @@
+
+ RUN  v4.1.12 /tmp/azura-check
+
+ ✓ src/test/growth-ui.test.tsx (1 test) 1669ms
+   ✓ shows six attributes and seven masteries, and plus/cancel/confirm operate on the real store  1608ms
+ ✓ src/test/growth.test.ts (24 tests) 124ms
+ ✓ src/test/app-routing.test.tsx (1 test) 33ms
+
+ Test Files  3 passed (3)
+      Tests  26 passed (26)
+   Start at  05:13:08
+   Duration  11.78s (transform 2.05s, setup 687ms, import 3.88s, tests 1.83s, environment 4.05s)
+
