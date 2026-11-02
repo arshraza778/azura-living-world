@@ -16,6 +16,9 @@ export function makeNpc(d: NpcDef): NPC {
     role: d.role,
     wander: !!d.wander,
     wait: 1,
+    pathI: 0,
+    ...(d.path ? { path: d.path } : {}),
+    ...(d.activity ? { activity: d.activity } : {}),
     walk: 0,
   };
 }

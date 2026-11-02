@@ -1,5 +1,5 @@
 export type RegionId = "eldergrove" | "verdant" | "thornveil" | "hollowroot" | "forgotten" | "blackwood";
-export type SceneId = "overworld" | "guild" | "dungeon1" | "dungeon2";
+export type SceneId = "overworld" | "guild" | "inn" | "cottage" | "dungeon1" | "dungeon2";
 export type Dir = 0 | 1 | 2 | 3; // down, left, right, up
 
 export type MonsterKind =
@@ -17,7 +17,10 @@ export interface Look {
   hair: string;
   cloak: string;
   trim: string;
+  hairStyle?: HairStyle;
 }
+
+export type HairStyle = "short" | "long" | "ponytail" | "spiky";
 
 export interface Decor {
   kind: string;
@@ -32,6 +35,7 @@ export interface Decor {
 export type Action =
   | { type: "scene"; to: SceneId; x: number; y: number }
   | { type: "board" }
+  | { type: "rest"; price: number }
   | { type: "inspect"; title: string; text: string }
   | { type: "chest"; id: string; loot: Record<string, number>; gold: number }
   | { type: "locked"; title: string; text: string };
@@ -64,6 +68,9 @@ export interface NPC {
   ty?: number;
   wait: number;
   walk: number;
+  path?: [number, number][];
+  pathI: number;
+  activity?: string;
 }
 
 export interface MonsterSpawn {

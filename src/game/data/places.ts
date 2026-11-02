@@ -45,16 +45,16 @@ export interface BuildingDef {
   roof: string;
   wall: string;
   sign?: boolean;
-  enter?: "guild";
+  enter?: "guild" | "inn" | "cottage";
   lockedText?: string;
 }
 
 export const BUILDINGS: BuildingDef[] = [
   { id: "guild", name: "Adventurers' Guild", x: 101, y: 67, w: 10, h: 8, roof: "#2f5d8a", wall: "#d8c7a4", sign: true, enter: "guild" },
-  { id: "inn", name: "The Sleeping Stag", x: 114, y: 73, w: 7, h: 6, roof: "#8a3b2f", wall: "#e1d2b2", sign: true, lockedText: "The inn's common room is closed for renovation. Bram the innkeeper waits outside." },
+  { id: "inn", name: "The Sleeping Stag", x: 114, y: 73, w: 7, h: 6, roof: "#8a3b2f", wall: "#e1d2b2", sign: true, enter: "inn" },
   { id: "shop", name: "Merchant's Row", x: 92, y: 75, w: 6, h: 5, roof: "#7a5a2a", wall: "#d9c9a8", sign: true, lockedText: "Goods are sold at the stall out front." },
   { id: "smithy", name: "Emberforge Smithy", x: 94, y: 84, w: 5, h: 4, roof: "#4a4a52", wall: "#b8a88a", sign: true, lockedText: "The forge is cold today. The smith is off gathering ore." },
-  { id: "house1", name: "Cottage", x: 113, y: 84, w: 5, h: 4, roof: "#9a4a3a", wall: "#e6d8bc", lockedText: "It's locked. Someone is humming inside." },
+  { id: "house1", name: "Cottage", x: 113, y: 84, w: 5, h: 4, roof: "#9a4a3a", wall: "#e6d8bc", enter: "cottage" },
   { id: "house2", name: "Cottage", x: 101, y: 88, w: 5, h: 4, roof: "#5a7a3a", wall: "#e2d4b6", lockedText: "It's locked." },
   { id: "house3", name: "Cottage", x: 121, y: 82, w: 4, h: 4, roof: "#8a5a3a", wall: "#dccdb0", lockedText: "It's locked." },
   { id: "house4", name: "Cottage", x: 88, y: 69, w: 5, h: 4, roof: "#3f6a7a", wall: "#e4d6b8", lockedText: "It's locked." },
@@ -69,18 +69,39 @@ export interface NpcDef {
   y: number;
   role: NpcRole;
   wander?: boolean;
+  path?: [number, number][];
+  activity?: string;
   look: Look;
   lines: string[];
 }
 
 export const OVERWORLD_NPCS: NpcDef[] = [
+  { id: "tomas", name: "Tomas", title: "Lamplighter", x: 96, y: 72, role: "villager", activity: "tending the lamps", path: [[96, 72], [108, 72], [108, 81], [96, 81]], look: { skin: "#d8a880", hair: "#3a2a1a", cloak: "#5a4a2a", trim: "#e0b060" }, lines: ["Every lamp in Eldergrove, lit by my hand each dusk. Forty-two of them!", "If you walk the forest at night, keep to the light. Things out there don't like it."] },
+  { id: "wren", name: "Wren", title: "Courier", x: 100, y: 79, role: "villager", activity: "delivering letters", path: [[100, 79], [118, 79], [118, 70], [104, 70]], look: { skin: "#f0c8a0", hair: "#a0402a", cloak: "#7a6a3a", trim: "#f0e0b0" }, lines: ["Letters for the Guild, letters for the inn, letters for nobody who can read them…", "Bram at the Sleeping Stag pays me in pie. Best deal in Azura."] },
   { id: "mira", name: "Mira", title: "Merchant", x: 95, y: 81.5, role: "merchant", look: { skin: "#f1c9a5", hair: "#c0582a", cloak: "#2f6a5a", trim: "#e6c36a" }, lines: ["Welcome to Merchant's Row! Bread, herbs and Azure Draughts — the essentials for any adventurer.", "I'll also buy any materials you haul back from the wilds."] },
-  { id: "bram", name: "Bram", title: "Innkeeper", x: 117.5, y: 80, role: "innkeeper", look: { skin: "#e0b48c", hair: "#6a4a2a", cloak: "#7a3a2a", trim: "#f0d090" }, lines: ["The Sleeping Stag never sleeps! Well — you can. Ten gold for a warm bed and a hot meal."] },
   { id: "kael", name: "Kael", title: "Weapons Trainer", x: 86, y: 80, role: "trainer", look: { skin: "#c99a74", hair: "#2a2a30", cloak: "#5a2a2a", trim: "#c0c0c8" }, lines: ["Swing with SPACE. Face your foe — your strike arcs in front of you.", "Sprinting with SHIFT burns stamina. Run out mid-fight and you'll be wolf food.", "Eat when you're hungry. An empty stomach slowly drains your health."] },
   { id: "elda", name: "Old Elda", title: "Villager", x: 104, y: 83, role: "villager", wander: true, look: { skin: "#f0d0b0", hair: "#dcdcdc", cloak: "#6a5a8a", trim: "#d0c0e0" }, lines: ["Eldergrove sits where all the roads meet. North to the Wilds, east to the Reach, south-east to Thornveil, west to the Hollowroot.", "Never go into the Blackwood at night. Never go in at all, if you're wise."] },
   { id: "pip", name: "Pip", title: "Village Child", x: 109, y: 85, role: "villager", wander: true, look: { skin: "#f5d2b0", hair: "#e0b040", cloak: "#3a7ac0", trim: "#ffffff" }, lines: ["Did you know there's a cabin hidden off the trail in the forest? My brother says a ghost lives there!"] },
-  { id: "rhea", name: "Captain Rhea", title: "Village Guard", x: 103.5, y: 63, role: "villager", look: { skin: "#d9a886", hair: "#8a2a2a", cloak: "#3a4a6a", trim: "#c8c8d0" }, lines: ["The North Road leads into the Verdant Wilds. Wolves have been bold lately.", "Check the Guild's mission board if you want coin for your trouble."] },
+  { id: "rhea", name: "Captain Rhea", title: "Village Guard", , x: 103.5, y: 63, role: "villager", activity: "patrolling", path: [[103.5, 63], [112, 64], [112, 77], [100, 78], [99, 65]], look: { skin: "#d9a886", hair: "#8a2a2a", cloak: "#3a4a6a", trim: "#c8c8d0" }, lines: ["The North Road leads into the Verdant Wilds. Wolves have been bold lately.", "Check the Guild's mission board if you want coin for your trouble."] },
   { id: "imre", name: "Scholar Imre", title: "Wandering Scholar", x: 147, y: 26, role: "villager", look: { skin: "#e8c0a0", hair: "#4a3a2a", cloak: "#8a6a2a", trim: "#f0e0a0" }, lines: ["Remarkable! These inscriptions predate Eldergrove by three thousand years.", "The obelisks speak of six lands… and a seventh that is sealed."] },
 ];
 
-export const PLAYER_LOOK: Look = { skin: "#f2cfae", hair: "#2a3a5a", cloak: "#2f5d8a", trim: "#e6c36a" };
+export const PLAYER_LOOK: Look = { skin: "#f2cfae", hair: "#2a3a5a", cloak: "#2f5d8a", trim: "#e6c36a", hairStyle: "short" };
+
+export const OUTFITS = [
+  { id: "wanderer", name: "Wanderer's Cloak", cloak: "#2f5d8a", trim: "#e6c36a" },
+  { id: "ranger", name: "Ranger Greens", cloak: "#3a6a3a", trim: "#d0e0a0" },
+  { id: "crimson", name: "Crimson Blade", cloak: "#8a2a2a", trim: "#f0d090" },
+  { id: "scholar", name: "Scholar's Robe", cloak: "#5a3a7a", trim: "#e0d0f0" },
+  { id: "ashen", name: "Ashen Hunter", cloak: "#3a3a42", trim: "#b8b8c8" },
+] as const;
+export const HAIR_STYLES: { id: import("../core/types").HairStyle; name: string }[] = [
+  { id: "short", name: "Short" }, { id: "long", name: "Long" }, { id: "ponytail", name: "Ponytail" }, { id: "spiky", name: "Spiky" },
+];
+export const HAIR_COLORS = ["#2a3a5a", "#1a1a20", "#6a4a2a", "#e8c060", "#c0582a", "#dcdcdc", "#5a8ac0"];
+export interface Appearance { outfit: string; hairStyle: import("../core/types").HairStyle; hairColor: string }
+export const DEFAULT_APPEARANCE: Appearance = { outfit: "wanderer", hairStyle: "short", hairColor: "#2a3a5a" };
+export function lookFor(a: Appearance): Look {
+  const o = OUTFITS.find((x) => x.id === a.outfit) ?? OUTFITS[0];
+  return { skin: PLAYER_LOOK.skin, hair: a.hairColor, cloak: o.cloak, trim: o.trim, hairStyle: a.hairStyle };
+}
