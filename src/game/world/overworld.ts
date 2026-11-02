@@ -143,7 +143,7 @@ export function generateOverworld(): Scene {
       h: 1.2,
       label: b.enter ? `Enter ${b.name}` : `Knock on ${b.name}`,
       action: b.enter
-        ? { type: "scene", to: "guild", x: 11, y: 11.5 }
+        ? { type: "scene", to: b.enter, x: -1, y: -1 }
         : { type: "locked", title: b.name, text: b.lockedText ?? "It's locked." },
     });
     decor.push({ kind: "lamp", x: b.x - 0.3, y: b.y + b.h + 0.6, v: 0.3 });

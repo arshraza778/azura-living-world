@@ -1,5 +1,5 @@
 import type { Scene, SceneId } from "../core/types";
-import { buildDungeon1, buildDungeon2, buildGuild } from "./interiors";
+import { buildCottage, buildDungeon1, buildDungeon2, buildGuild, buildInn } from "./interiors";
 import { generateOverworld } from "./overworld";
 
 const cache = new Map<SceneId, Scene>();
@@ -7,6 +7,8 @@ const cache = new Map<SceneId, Scene>();
 const builders: Record<SceneId, () => Scene> = {
   overworld: generateOverworld,
   guild: buildGuild,
+  inn: buildInn,
+  cottage: buildCottage,
   dungeon1: buildDungeon1,
   dungeon2: buildDungeon2,
 };
