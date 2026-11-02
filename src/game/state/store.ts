@@ -3,6 +3,7 @@ import type { MonsterKind, RegionId, SceneId } from "../core/types";
 import { ITEMS } from "../data/items";
 import { MAX_ACTIVE_MISSIONS, MISSIONS, type MissionDef } from "../data/missions";
 import { VILLAGE_SPAWN } from "../world/overworld";
+import { DEFAULT_APPEARANCE, type Appearance } from "../data/places";
 
 const SAVE_KEY = "azura.save.v1";
 
@@ -29,9 +30,11 @@ export interface PlayerData {
   missions: Record<string, MissionState>;
   kills: Partial<Record<MonsterKind, number>>;
   pos: { scene: SceneId; x: number; y: number };
+  appearance: Appearance;
+  starterV2?: boolean;
 }
 
-export type Panel = null | "map" | "inventory" | "character" | "quests" | "guild" | "dialogue";
+export type Panel = null | "map" | "inventory" | "character" | "quests" | "guild" | "dialogue" | "shop";
 
 export interface DialogueState {
   name: string;
@@ -63,7 +66,9 @@ export function defaultData(): PlayerData {
     stamina: 100,
     maxStamina: 100,
     hunger: 80,
-    inventory: { bread: 3, herb: 2 },
+    inventory: { apple: 4, bread: 2, healing_potion: 2, wooden_sword: 1, forest_fiber: 3 },
+    starterV2: true,
+    appearance: { ...DEFAULT_APPEARANCE },
     discoveredRegions: ["eldergrove"],
     discoveredPois: ["eldergrove"],
     openedChests: [],
@@ -114,6 +119,12 @@ export function loadSave() {
     if (!raw) return;
     const parsed = JSON.parse(raw) as Partial<PlayerData>;
     game.data = { ...defaultData(), ...parsed };
+    game.data.appearance = { ...DEFAULT_APPEARANCE, ...(parsed.appearance ?? {}) };
+    if (!parsed.starterV2) {
+      // Grant the Phase 2 starter kit once to existing saves.
+      for (const [k, n] of Object.entries({ apple: 4, healing_potion: 2, wooden_sword: 1, forest_fiber: 3 })) addItem(k, n);
+      game.data.starterV2 = true;
+    }
   } catch {
     game.data = defaultData();
   }
@@ -163,7 +174,14 @@ export function openDialogue(d: Omit<DialogueState, "page">) {
 
 // ---------- progression ----------
 export const xpForLevel = (lvl: number) => 50 * lvl + 25 * (lvl - 1) * (lvl - 1);
-export const attackPower = (d: PlayerData) => 8 + d.level * 3;
+export const attackPower = (d: PlayerData) =>
+  8 + d.level * 3 + Math.max(0, ...Object.keys(d.inventory).map((id) => ITEMS[id]?.attack ?? 0));
+
+export function setAppearance(a: Partial<Appearance>) {
+  game.data.appearance = { ...game.data.appearance, ...a };
+  save();
+  emit();
+}
 
 export function addXp(amount: number) {
   const d = game.data;
@@ -229,8 +247,8 @@ export function rest(price: number) {
   d.gold -= price;
   d.hp = d.maxHp;
   d.stamina = d.maxStamina;
-  d.hunger = 100;
-  toast("You wake fully rested and well fed.", "good");
+  if (price > 0) d.hunger = 100;
+  toast(price > 0 ? "You wake fully rested and well fed." : "A short nap. Health and stamina restored.", "good");
   save();
   emit();
 }
@@ -276,7 +294,7 @@ export function turnInMission(id: string) {
   const m = MISSIONS.find((x) => x.id === id);
   if (!m || !isReady(m)) return;
   const d = game.data;
-  d.missions[id].status = "done";
+  d.missions[id]!.status = "done";
   d.gold += m.reward.gold;
   for (const [it, n] of Object.entries(m.reward.items ?? {})) addItem(it, n);
   addXp(m.reward.xp);
