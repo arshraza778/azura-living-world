@@ -20,9 +20,9 @@ import { authenticateMultiplayer, disconnectMultiplayer, getMultiplayerState, re
 function Bar({ v, max, kind, label }: { v: number; max: number; kind: string; label: string }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="w-14 text-[11px] uppercase tracking-widest text-parchment/70">{label}</span>
-      <div className="bar-track w-40"><div className={`bar-fill bar-${kind}`} style={{ width: `${Math.max(0, (v / max) * 100)}%` }} /></div>
-      <span className="w-14 text-right text-xs tabular-nums text-parchment/80">{Math.round(v)}/{max}</span>
+      <span className="w-12 text-[11px] uppercase tracking-widest text-parchment/70 sm:w-14">{label}</span>
+      <div className="bar-track w-24 sm:w-40"><div className={`bar-fill bar-${kind}`} style={{ width: `${Math.max(0, (v / max) * 100)}%` }} /></div>
+      <span className="w-12 text-right text-[10px] tabular-nums text-parchment/80 sm:w-14 sm:text-xs">{Math.round(v)}/{max}</span>
     </div>
   );
 }
@@ -55,9 +55,9 @@ function Hud() {
   }, [g.ui.banner?.key]);
   return (
     <>
-      <div className="fantasy-panel absolute left-4 top-4 z-10 space-y-1.5 p-3">
-        <div className="flex items-baseline justify-between">
-          <span className="font-display text-lg text-gold">{d.name}</span>
+      <div className="fantasy-panel absolute left-2 top-2 z-10 space-y-1 p-2 sm:left-4 sm:top-4 sm:space-y-1.5 sm:p-3">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="font-display text-base text-gold sm:text-lg">{d.name}</span>
           <span className="text-xs text-parchment/80">Lv {d.level} · {d.gold} gold</span>
         </div>
         <Bar v={d.hp} max={d.maxHp} kind="hp" label="Health" />
@@ -65,18 +65,18 @@ function Hud() {
         <Bar v={d.hunger} max={100} kind="hunger" label="Hunger" />
         <div className="bar-track h-1"><div className="bar-fill bar-xp" style={{ width: `${(d.xp / xpForLevel(d.level)) * 100}%` }} /></div>
       </div>
-      <div className="fantasy-panel absolute left-1/2 top-4 z-10 -translate-x-1/2 px-5 py-2 text-center">
-        <div className="font-display text-base text-gold">{inside ? g.ui.sceneName : region.name}</div>
+      <div className="fantasy-panel absolute left-1/2 top-36 z-10 max-w-[92vw] -translate-x-1/2 px-3 py-1.5 text-center sm:top-4 sm:max-w-none sm:px-5 sm:py-2">
+        <div className="truncate font-display text-sm text-gold sm:text-base">{inside ? g.ui.sceneName : region.name}</div>
         <div className="text-[11px] uppercase tracking-widest text-parchment/70">
           {inside ? "Interior" : region.subtitle} · <span className={`danger-${inside ? 1 : region.danger}`}>Danger {"◆".repeat(inside ? 1 : region.danger)}</span>
         </div>
       </div>
-      <div className="absolute right-4 top-16 z-10 flex gap-2">
+      <div className="absolute right-4 top-16 z-10 hidden gap-2 sm:flex">
         <button className="fantasy-btn" onClick={() => openPanel("market")}>Marketplace</button>
         <button className="fantasy-btn" onClick={() => openPanel("communityGuild")}>Guilds</button>
         <button className="fantasy-btn" onClick={() => openPanel("multiplayer")}>Multiplayer</button>
       </div>
-      <button className="fantasy-panel absolute right-4 top-4 z-10 flex items-center gap-2 px-3 py-2 text-sm text-parchment" onClick={() => openPanel("map")}>
+      <button className="fantasy-panel absolute right-4 top-4 z-10 hidden items-center gap-2 px-3 py-2 text-sm text-parchment sm:flex" onClick={() => openPanel("map")}>
         <Compass size={16} className="text-gold" /> World Map <kbd className="kbd">M</kbd>
       </button>
       {banner && (
@@ -86,23 +86,23 @@ function Hud() {
         </div>
       )}
       {g.ui.prompt && !g.ui.panel && (
-        <div className="fantasy-panel absolute bottom-24 left-1/2 z-10 -translate-x-1/2 px-4 py-2 text-sm text-parchment">
-          <kbd className="kbd">E</kbd> {g.ui.prompt}
+        <div className="fantasy-panel absolute bottom-60 left-1/2 z-10 max-w-[92vw] -translate-x-1/2 px-4 py-2 text-center text-sm text-parchment sm:bottom-24">
+          <kbd className="kbd hidden sm:inline">E</kbd> {g.ui.prompt}
         </div>
       )}
-      <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 gap-2">
+      <div className="absolute bottom-40 left-1/2 z-10 flex max-w-[96vw] -translate-x-1/2 gap-1 overflow-x-auto px-1 sm:bottom-4 sm:gap-2">
         {([["inventory", Backpack, "Inventory", "I"], ["character", User, "Character", "C"], ["quests", ScrollText, "Missions", "J"], ["map", MapIcon, "Map", "M"]] as const).map(([p, Icon, label, key]) => (
-          <button key={p} className="fantasy-btn flex items-center gap-2" onClick={() => openPanel(p)}><Icon size={16} /> {label} <kbd className="kbd">{key}</kbd></button>
+          <button key={p} className="fantasy-btn flex shrink-0 items-center gap-2" onClick={() => openPanel(p)}><Icon size={16} /> <span className="hidden sm:inline">{label}</span> <kbd className="kbd hidden sm:inline">{key}</kbd></button>
         ))}
-        <button className="fantasy-btn flex items-center gap-1" onClick={() => openPanel("shop")}><Fish size={15}/> Fish</button>
+        <button className="fantasy-btn flex shrink-0 items-center gap-1" onClick={() => openPanel("shop")}><Fish size={15}/> <span className="hidden sm:inline">Fish</span></button>
         {(["bread", "herb"] as const).map((id) => (
-          <button key={id} className="fantasy-btn" disabled={!d.inventory[id]} onClick={() => useItem(id)}>{ITEMS[id].name} ×{d.inventory[id] ?? 0}</button>
+          <button key={id} className="fantasy-btn shrink-0 whitespace-nowrap text-xs sm:text-sm" disabled={!d.inventory[id]} onClick={() => useItem(id)}>{ITEMS[id].name} ×{d.inventory[id] ?? 0}</button>
         ))}
       </div>
       <div className="absolute bottom-4 left-4 z-10 hidden text-[11px] leading-5 text-parchment/70 lg:block">
         WASD / Arrows move · Shift sprint · Click / F attack · Space dodge · E interact · I inventory · C character
       </div>
-      <div className="absolute right-4 top-20 z-20 flex w-72 flex-col gap-2">
+      <div className="absolute right-2 top-14 z-20 flex w-52 max-w-[62vw] flex-col gap-2 sm:right-4 sm:top-20 sm:w-72 sm:max-w-none">
         {g.ui.toasts.map((t) => <div key={t.id} className={`fantasy-panel toast-${t.tone} px-3 py-2 text-sm`}>{t.text}</div>)}
       </div>
     </>
@@ -338,8 +338,79 @@ function MultiplayerPanel() {
     {net.status!=="online"&&<form className="parchment-card mb-4 grid gap-2 p-3 md:grid-cols-3" onSubmit={e=>{e.preventDefault();authenticateMultiplayer(username,password,register)}}><label className="text-xs">Username<input className="mt-1 w-full rounded bg-ink px-3 py-2 text-parchment" minLength={3} maxLength={20} autoComplete="username" value={username} onChange={e=>setUsername(e.target.value)} required /></label><label className="text-xs">Password<input className="mt-1 w-full rounded bg-ink px-3 py-2 text-parchment" type="password" minLength={8} maxLength={128} autoComplete={register?"new-password":"current-password"} value={password} onChange={e=>setPassword(e.target.value)} required /></label><div className="flex items-end gap-2"><button className="fantasy-btn-primary" type="submit">{register?"Create account":"Sign in"}</button><button className="fantasy-btn" type="button" onClick={()=>setRegister(v=>!v)}>{register?"I have an account":"Register"}</button></div></form>}
     {net.error&&<p className="mb-3 text-sm text-red-300" role="alert">{net.error}</p>}
     {net.status==="online"&&<div className="grid gap-4 md:grid-cols-2"><section><h3 className="mb-2 font-display text-lg text-gold">Adventurers nearby ({net.players.length})</h3><div className="max-h-56 space-y-2 overflow-y-auto">{net.players.map(p=><div key={p.id} className="parchment-card flex items-center justify-between gap-2 p-2"><span>{p.name}</span><button className="fantasy-btn" disabled={!!net.party} onClick={()=>sendNetwork({type:"party:invite",targetId:p.id})}>Invite to party</button></div>)}{!net.players.length&&<p className="text-sm text-parchment/60">No other players are in this area yet.</p>}</div><div className="mt-3 flex flex-wrap gap-2">{!net.party?<button className="fantasy-btn-primary" onClick={()=>sendNetwork({type:"party:create"})}>Create party</button>:<button className="fantasy-btn" onClick={()=>sendNetwork({type:"party:leave"})}>Leave party ({net.party.members.length}/5)</button>}{net.invitation&&<button className="fantasy-btn-primary" onClick={()=>{sendNetwork({type:"party:accept",partyId:net.invitation!.partyId});refresh(n=>n+1)}}>Accept invite from {net.invitation.from}</button>}</div>{net.party&&<p className="mt-2 text-xs text-parchment/70">Party members: {net.party.members.length} · Party formed</p>}</section><section><h3 className="mb-2 font-display text-lg text-gold">Local area chat</h3><div className="mb-2 h-56 space-y-2 overflow-y-auto rounded border border-gold/20 bg-ink/40 p-3">{net.messages.filter(m=>m.scene===game.data.pos.scene).map(m=><p key={m.id} className="text-sm"><strong className="text-gold">{m.name}: </strong><span className="text-parchment">{m.text}</span></p>)}{!net.messages.length&&<p className="text-sm text-parchment/50">No messages yet.</p>}</div><form className="flex gap-2" onSubmit={sendChat}><input className="min-w-0 flex-1 rounded bg-ink px-3 py-2 text-parchment" maxLength={240} value={chat} onChange={e=>setChat(e.target.value)} placeholder="Say something to nearby players"/><button className="fantasy-btn-primary" type="submit" disabled={!chat.trim()}>Send</button></form></section></div>}
-    <p className="mt-4 text-xs text-parchment/50">Server address: {import.meta.env.VITE_AZURA_SERVER_URL || "http://localhost:8787"}. The server must be started separately; see MULTIPLAYER.md.</p>
+    <p className="mt-4 text-xs text-parchment/50">Server address: {import.meta.env["VITE_AZURA_SERVER_URL"] || "http://localhost:8787"}. The server must be started separately; see MULTIPLAYER.md.</p>
   </Frame>;
+}
+
+function tapKey(key: string) {
+  window.dispatchEvent(new KeyboardEvent("keydown", { key }));
+  window.dispatchEvent(new KeyboardEvent("keyup", { key }));
+}
+
+function TouchControls() {
+  const [show, setShow] = useState(false);
+  const base = useRef<HTMLDivElement>(null);
+  const knobRef = useRef<HTMLDivElement>(null);
+  const pid = useRef<number | null>(null);
+  const active = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const mq = window.matchMedia("(pointer: coarse)");
+    const update = () => setShow(mq.matches || window.innerWidth < 768);
+    update();
+    mq.addEventListener("change", update);
+    window.addEventListener("resize", update);
+    return () => { mq.removeEventListener("change", update); window.removeEventListener("resize", update); };
+  }, []);
+
+  const setDirs = (dx: number, dy: number) => {
+    const next = new Set<string>();
+    if (dx < -0.35) next.add("a");
+    if (dx > 0.35) next.add("d");
+    if (dy < -0.35) next.add("w");
+    if (dy > 0.35) next.add("s");
+    if (Math.hypot(dx, dy) > 0.92) next.add("shift");
+    for (const k of active.current) if (!next.has(k)) window.dispatchEvent(new KeyboardEvent("keyup", { key: k }));
+    for (const k of next) if (!active.current.has(k)) window.dispatchEvent(new KeyboardEvent("keydown", { key: k }));
+    active.current = next;
+  };
+
+  const move = (e: React.PointerEvent) => {
+    if (pid.current !== e.pointerId) return;
+    const r = base.current!.getBoundingClientRect();
+    let dx = (e.clientX - (r.left + r.width / 2)) / (r.width / 2);
+    let dy = (e.clientY - (r.top + r.height / 2)) / (r.height / 2);
+    const l = Math.hypot(dx, dy);
+    if (l > 1) { dx /= l; dy /= l; }
+    if (knobRef.current) knobRef.current.style.transform = `translate(calc(-50% + ${dx * 34}px), calc(-50% + ${dy * 34}px))`;
+    setDirs(dx, dy);
+  };
+
+  const end = (e: React.PointerEvent) => {
+    if (pid.current !== e.pointerId) return;
+    pid.current = null;
+    if (knobRef.current) knobRef.current.style.transform = "translate(-50%, -50%)";
+    setDirs(0, 0);
+  };
+
+  if (!show) return null;
+  const btn = "fantasy-btn flex items-center justify-center rounded-full text-xl";
+  return (
+    <>
+      <div ref={base} className="absolute bottom-6 left-4 z-10 h-32 w-32 rounded-full border-2 border-gold/40 bg-ink/40" style={{ touchAction: "none" }}
+        onPointerDown={(e) => { pid.current = e.pointerId; base.current!.setPointerCapture(e.pointerId); move(e); }}
+        onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
+        <div ref={knobRef} className="absolute left-1/2 top-1/2 h-14 w-14 -translate-x-1/2 -translate-y-1/2 rounded-full border border-gold/60 bg-gold/30" />
+      </div>
+      <div className="absolute bottom-6 right-4 z-10 flex items-end gap-3" style={{ touchAction: "none" }}>
+        <div className="flex flex-col gap-3">
+          <button aria-label="Interact" className={`${btn} h-14 w-14`} onPointerDown={(e) => { e.preventDefault(); tapKey("e"); }}>✋</button>
+          <button aria-label="Dodge" className={`${btn} h-14 w-14`} onPointerDown={(e) => { e.preventDefault(); tapKey(" "); }}>💨</button>
+        </div>
+        <button aria-label="Attack" className={`${btn} fantasy-btn-primary h-20 w-20 text-2xl`} onPointerDown={(e) => { e.preventDefault(); tapKey("f"); }}>⚔️</button>
+      </div>
+    </>
+  );
 }
 
 export function Game() {
@@ -351,9 +422,10 @@ export function Game() {
     return () => e.destroy();
   }, []);
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-ink font-body select-none">
+    <div className="relative h-screen w-screen touch-none overflow-hidden bg-ink font-body select-none">
       <canvas ref={ref} className="absolute inset-0 h-full w-full" />
       <Hud />
+      <TouchControls />
       {g.ui.panel === "dialogue" && g.ui.dialogue && <Dialogue />}
       {g.ui.panel === "guild" && <GuildBoard />}
       {g.ui.panel === "home" && <HomePanel />}

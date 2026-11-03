@@ -14,7 +14,7 @@ let state: MultiplayerState = { ...initial };
 let socket: WebSocket | null = null;
 const listeners = new Set<() => void>();
 const TOKEN_KEY = "azura.multiplayer.token";
-const baseUrl = () => (import.meta.env.VITE_AZURA_SERVER_URL || "http://localhost:8787").replace(/\/$/, "");
+const baseUrl = () => (import.meta.env["VITE_AZURA_SERVER_URL"] || "http://localhost:8787").replace(/\/$/, "");
 function update(patch: Partial<MultiplayerState>) { state = { ...state, ...patch }; listeners.forEach(fn => fn()); }
 export function getMultiplayerState() { return state; }
 export function subscribeMultiplayer(fn: () => void) { listeners.add(fn); return () => { listeners.delete(fn); }; }

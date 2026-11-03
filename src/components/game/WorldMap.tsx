@@ -15,6 +15,8 @@ export function WorldMap() {
   viewRef.current = view;
   const [sel, setSel] = useState<string>(g.ui.regionId);
   const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<{ d: number; z: number } | null>(null);
   const fog = useMemo(() => fogCanvas(d.discoveredRegions), [d.discoveredRegions.length]);
 
   useEffect(() => {
@@ -58,16 +60,31 @@ export function WorldMap() {
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
-      <div ref={box} className="map-frame relative aspect-[200/140] cursor-grab overflow-hidden"
-        onPointerDown={(e) => (drag.current = { x: e.clientX, y: e.clientY, moved: false })}
+      <div ref={box} className="map-frame relative aspect-[200/140] cursor-grab touch-none overflow-hidden"
+        onPointerDown={(e) => {
+          pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          if (pointers.current.size === 2) {
+            const [a, b] = [...pointers.current.values()];
+            pinch.current = { d: Math.hypot(a.x - b.x, a.y - b.y), z: viewRef.current.z };
+            drag.current = null;
+          } else drag.current = { x: e.clientX, y: e.clientY, moved: false };
+        }}
         onPointerMove={(e) => {
+          if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          if (pinch.current && pointers.current.size === 2) {
+            const [a, b] = [...pointers.current.values()];
+            const z = Math.max(1, Math.min(5, pinch.current.z * (Math.hypot(a.x - b.x, a.y - b.y) / (pinch.current.d || 1))));
+            setView((v) => ({ ...v, z }));
+            return;
+          }
           const dr = drag.current; if (!dr) return;
           const dx = e.clientX - dr.x, dy = e.clientY - dr.y;
           if (Math.abs(dx) + Math.abs(dy) > 3) dr.moved = true;
           dr.x = e.clientX; dr.y = e.clientY;
           if (dr.moved) setView((v) => ({ ...v, x: v.x + dx, y: v.y + dy }));
         }}
-        onPointerUp={() => setTimeout(() => (drag.current = null), 0)}
+        onPointerUp={(e) => { pointers.current.delete(e.pointerId); if (pointers.current.size < 2) pinch.current = null; setTimeout(() => (drag.current = null), 0); }}
+        onPointerCancel={(e) => { pointers.current.delete(e.pointerId); if (pointers.current.size < 2) pinch.current = null; drag.current = null; }}
         onClick={click}>
         <div className="absolute inset-0 origin-top-left" style={{ transform: `translate(${view.x}px,${view.y}px) scale(${view.z})` }}>
           <canvas ref={mapRef} className="h-full w-full" />
