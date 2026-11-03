@@ -62,3 +62,8 @@ cd <repository-name>
 npm i
 npm run dev
 ```
+
+
+## Multiplayer prototype (Phase 9)
+
+See [MULTIPLAYER.md](./MULTIPLAYER.md) for running the separate Node.js multiplayer service locally or on a LAN. Start it with `npm run multiplayer` in a second terminal.

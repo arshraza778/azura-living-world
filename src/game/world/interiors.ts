@@ -233,3 +233,21 @@ export function buildDungeon2(): Scene {
     exits: { "<": { label: "Climb to the First Depth", to: "dungeon1", x: up.x + 0.5, y: up.y + 1.5 } },
   });
 }
+
+
+const PLAYER_HOME = [
+  "##############",
+  "#S....F....S.#",
+  "#............#",
+  "#..T......H..#",
+  "#............#",
+  "#N....@......#",
+  "######DD######",
+];
+
+export function buildPlayerHome(): Scene {
+  const scene = build({ id: "home", name: "Your Eldergrove Cottage", map: PLAYER_HOME, floor: T.WOOD, wall: T.WALL, dark: 0.12, exits: { D: { label: "Leave your home", to: "overworld", x: 103.5, y: 92.2 } } });
+  scene.triggers.push({ x: 9.5, y: 2.5, w: 2.5, h: 2, label: "Open home storage", action: { type: "homeStorage" } });
+  scene.triggers.push({ x: 1.5, y: 4.5, w: 2.5, h: 2, label: "Rest in your bed", action: { type: "rest", price: 0 } });
+  return scene;
+}

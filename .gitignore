@@ -30,3 +30,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local multiplayer account/world data and secrets
+data/
+.env
+.env.*
+!.env.example

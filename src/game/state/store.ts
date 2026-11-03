@@ -40,9 +40,12 @@ export interface PlayerData {
   discoveredRecipes?: string[];
   farmPlots?: { crop: string | null; plantedAt: number; watered: boolean }[];
   fishCaught?: number;
+  housing: { ownedHomeId: string | null; homeName: string; storage: Record<string, number>; upgrades: { bed: number } };
+  marketListings: { id: string; seller: string; sellerType: "village" | "player"; itemId: string; quantity: number; unitPrice: number; createdAt: number }[];
+  guild: { id: string | null; name: string | null; role: "leader" | "officer" | "member" | null; members: { id: string; name: string; role: "leader" | "officer" | "member" }[]; messages: { id: string; author: string; text: string; createdAt: number }[] };
 }
 
-export type Panel = null | "map" | "inventory" | "character" | "quests" | "guild" | "dialogue" | "shop" | "crafting" | "farming";
+export type Panel = null | "home" | "market" | "communityGuild" | "multiplayer" | "map" | "inventory" | "character" | "quests" | "guild" | "dialogue" | "shop" | "crafting" | "farming";
 
 export interface DialogueState {
   name: string;
@@ -90,6 +93,14 @@ export function defaultData(): PlayerData {
     discoveredRecipes: ["healing_potion", "bread", "axe", "pickaxe", "knife", "fishing_rod", "watering_can"],
     farmPlots: Array.from({ length: 6 }, () => ({ crop: null, plantedAt: 0, watered: false })),
     fishCaught: 0,
+    housing: { ownedHomeId: "eldergrove-cottage", homeName: "Willow Cottage", storage: {}, upgrades: { bed: 1 } },
+    marketListings: [
+      { id: "village-apple-1", seller: "Mira the Merchant", sellerType: "village", itemId: "apple", quantity: 8, unitPrice: 2, createdAt: 0 },
+      { id: "village-bread-1", seller: "Bram the Innkeeper", sellerType: "village", itemId: "bread", quantity: 5, unitPrice: 5, createdAt: 0 },
+      { id: "village-herb-1", seller: "Sylvi the Alchemist", sellerType: "village", itemId: "herb", quantity: 6, unitPrice: 7, createdAt: 0 },
+      { id: "village-potion-1", seller: "Sylvi the Alchemist", sellerType: "village", itemId: "healing_potion", quantity: 3, unitPrice: 14, createdAt: 0 },
+    ],
+    guild: { id: null, name: null, role: null, members: [], messages: [] },
   };
 }
 
@@ -143,6 +154,9 @@ export function loadSave() {
     game.data.appearance = { ...DEFAULT_APPEARANCE, ...(parsed.appearance ?? {}) };
     game.data.equipment = { ...(parsed.equipment ?? { weapon: "wooden_sword" }) };
     game.data.equipmentUpgrades = { ...(parsed.equipmentUpgrades ?? {}) };
+    game.data.housing = { ...defaultData().housing, ...(parsed.housing ?? {}), storage: { ...(parsed.housing?.storage ?? {}) }, upgrades: { bed: 1, ...(parsed.housing?.upgrades ?? {}) } };
+    game.data.marketListings = Array.isArray(parsed.marketListings) ? parsed.marketListings : defaultData().marketListings;
+    game.data.guild = { ...defaultData().guild, ...(parsed.guild ?? {}), members: parsed.guild?.members ?? [], messages: parsed.guild?.messages ?? [] };
     if (!parsed.starterV2) {
       // Grant the Phase 2 starter kit once to existing saves.
       for (const [k, n] of Object.entries({ apple: 4, healing_potion: 2, wooden_sword: 1, forest_fiber: 3 })) addItem(k, n);
@@ -167,6 +181,11 @@ export function save() {
     localStorage.setItem(SAVE_KEY, JSON.stringify(game.data));
   } catch {
     /* storage unavailable */
+  }
+  // While connected, mirror the economy snapshot so gathered/earned items can be traded.
+  // The multiplayer service treats this as a prototype client sync; production must move all grants server-side.
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("azura:character-save", { detail: { gold: game.data.gold, inventory: { ...game.data.inventory }, equipment: { ...(game.data.equipment ?? {}) } } }));
   }
 }
 

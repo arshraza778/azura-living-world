@@ -5,6 +5,7 @@ import { REGIONS, TILE } from "../data/regions";
 import { ITEMS } from "../data/items";
 import { CHUNK, drawCharacter, drawDecor, drawMonster, drawTraps, drawWaterFx, getChunk, trapUp } from "../render/draw";
 import { getScene } from "../world/scenes";
+import { getRemotePlayers, publishPosition } from "../network/multiplayer";
 import { addItem, addXp, attackPower, checkMissionReadiness, emit, game, openDialogue, openPanel, save, toast, gatherResource, addMasteryXp, statEffects, incomingDamage, staminaCost } from "../state/store";
 
 interface Monster { kind: MonsterKind; x: number; y: number; hx: number; hy: number; hp: number; cd: number; hurt: number; dead: number; t: number; wx: number; wy: number }
@@ -28,6 +29,7 @@ export class Engine {
   raf = 0;
   emitT = 0;
   saveT = 0;
+  networkT = 0;
   tint = { dark: 0 };
   target: { npc?: NPC; trig?: Trigger; drop?: GroundDrop; resource?: ResourceNode } | null = null;
   drops: GroundDrop[] = [];
@@ -41,6 +43,7 @@ export class Engine {
     this.ctx = canvas.getContext("2d")!;
     const p = game.data.pos;
     this.enter(p.scene, p.x, p.y, true);
+    window.addEventListener("azura:network-position", this.networkPosition as EventListener);
     window.addEventListener("keydown", this.kd);
     window.addEventListener("keyup", this.ku);
     this.canvas.addEventListener("click", this.mc);
@@ -49,10 +52,15 @@ export class Engine {
   destroy() {
     cancelAnimationFrame(this.raf);
     window.clearTimeout(this.gatherTimeout);
+    window.removeEventListener("azura:network-position", this.networkPosition as EventListener);
     window.removeEventListener("keydown", this.kd);
     window.removeEventListener("keyup", this.ku);
     this.canvas.removeEventListener("click", this.mc);
   }
+  networkPosition = (event: Event) => {
+    const detail = (event as CustomEvent<{ scene: SceneId; x: number; y: number }>).detail;
+    if (detail && detail.scene && Number.isFinite(detail.x) && Number.isFinite(detail.y)) this.enter(detail.scene, detail.x, detail.y, true);
+  };
   kd = (e: KeyboardEvent) => {
     const k = e.key.toLowerCase();
     if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(k)) e.preventDefault();
@@ -181,6 +189,7 @@ export class Engine {
     const a = tg.trig!.action;
     if (a.type === "scene") this.enter(a.to, a.x, a.y);
     else if (a.type === "board") openPanel("guild");
+    else if (a.type === "homeStorage") openPanel("home");
     else if (a.type === "inspect" || a.type === "locked") openDialogue({ name: a.title, lines: [a.text], role: "info" });
     else if (a.type === "keydoor") {
       if (!game.data.inventory[a.key]) return toast("The seal needs a Rootbound Key. Search the treasure chests.", "bad");
@@ -391,7 +400,8 @@ export class Engine {
     }
     const targetDark = this.scene.region ? REGIONS.find((r) => r.id === game.ui.regionId)?.ambient.dark ?? 0 : this.scene.dark;
     this.tint.dark += (targetDark - this.tint.dark) * Math.min(1, dt * 2);
-    this.emitT += dt; this.saveT += dt;
+    this.emitT += dt; this.saveT += dt; this.networkT += dt;
+    if (this.networkT >= 0.15) { this.networkT = 0; publishPosition(); }
     if (this.emitT > 0.12) { this.emitT = 0; emit(); }
     if (this.saveT > 4) { this.saveT = 0; save(); }
   }
@@ -427,6 +437,7 @@ export class Engine {
       items.push({ y: d.y, f: () => drawDecor(ctx, d, this.t) });
     }
     for (const n of s.npcs) items.push({ y: n.y, f: () => drawCharacter(ctx, n.x, n.y, n.dir, n.walk, n.look) });
+    for (const remote of getRemotePlayers(s.id)) items.push({ y: remote.y, f: () => { const a = remote.appearance; const outfit = a?.outfit ?? "wanderer"; const hairStyle = a?.hairStyle ?? "short"; const hairColor = a?.hairColor ?? "#2a3a5a"; drawCharacter(ctx, remote.x, remote.y, 0, this.t, lookFor({ outfit, hairStyle, hairColor })); ctx.save(); ctx.font = "11px sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = "#fff2c2"; ctx.strokeStyle = "#17151d"; ctx.lineWidth = 3; ctx.strokeText(remote.name, remote.x * TILE, remote.y * TILE - 30); ctx.fillText(remote.name, remote.x * TILE, remote.y * TILE - 30); ctx.restore(); } });
     for (const m of this.monsters.get(s.id) ?? []) if (m.dead <= 0) items.push({ y: m.y, f: () => {
       drawMonster(ctx, m.kind, m.x, m.y, m.t, m.hurt, m.hp / MONSTERS[m.kind].hp, MONSTERS[m.kind].size);
       if (m.kind === "hollowroot_guardian" && m.cd > 0 && m.cd < 0.42) {

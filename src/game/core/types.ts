@@ -1,5 +1,5 @@
 export type RegionId = "eldergrove" | "verdant" | "thornveil" | "hollowroot" | "forgotten" | "blackwood";
-export type SceneId = "overworld" | "guild" | "inn" | "cottage" | "dungeon1" | "dungeon2";
+export type SceneId = "overworld" | "guild" | "inn" | "cottage" | "home" | "dungeon1" | "dungeon2";
 export type Dir = 0 | 1 | 2 | 3; // down, left, right, up
 
 export type MonsterKind =
@@ -48,6 +48,7 @@ export type Action =
   | { type: "inspect"; title: string; text: string }
   | { type: "chest"; id: string; loot: Record<string, number>; gold: number }
   | { type: "locked"; title: string; text: string }
+  | { type: "homeStorage" }
   | { type: "keydoor"; title: string; text: string; key: string; x: number; y: number };
 
 export interface Trigger {

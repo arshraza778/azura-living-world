@@ -11,7 +11,10 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "multiplayer": "node server/multiplayer.mjs",
+    "test:multiplayer": "node --test tests/multiplayer.test.mjs",
+    "test:all": "npm test && npm run test:multiplayer"
   },
   "overrides": {
     "rolldown": "1.2.1"

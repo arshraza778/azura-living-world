@@ -14,6 +14,8 @@ import {
 import { WorldMap } from "./WorldMap";
 import { getScene } from "@/game/world/scenes";
 import { T } from "@/game/data/tiles";
+import { buyMarketListing, cancelMarketListing, createMarketListing, createPlayerGuild, availableGuilds, joinAvailableGuild, leavePlayerGuild, postGuildMessage, renameHome, retrieveFromHome, storeAtHome } from "@/game/state/social";
+import { authenticateMultiplayer, disconnectMultiplayer, getMultiplayerState, reconnectMultiplayer, sendNetwork, subscribeMultiplayer, listSharedMarketItem, buySharedMarketItem, cancelSharedMarketItem, createSharedGuild, joinSharedGuild, leaveSharedGuild, postSharedGuildMessage } from "@/game/network/multiplayer";
 
 function Bar({ v, max, kind, label }: { v: number; max: number; kind: string; label: string }) {
   return (
@@ -68,6 +70,11 @@ function Hud() {
         <div className="text-[11px] uppercase tracking-widest text-parchment/70">
           {inside ? "Interior" : region.subtitle} · <span className={`danger-${inside ? 1 : region.danger}`}>Danger {"◆".repeat(inside ? 1 : region.danger)}</span>
         </div>
+      </div>
+      <div className="absolute right-4 top-16 z-10 flex gap-2">
+        <button className="fantasy-btn" onClick={() => openPanel("market")}>Marketplace</button>
+        <button className="fantasy-btn" onClick={() => openPanel("communityGuild")}>Guilds</button>
+        <button className="fantasy-btn" onClick={() => openPanel("multiplayer")}>Multiplayer</button>
       </div>
       <button className="fantasy-panel absolute right-4 top-4 z-10 flex items-center gap-2 px-3 py-2 text-sm text-parchment" onClick={() => openPanel("map")}>
         <Compass size={16} className="text-gold" /> World Map <kbd className="kbd">M</kbd>
@@ -144,6 +151,7 @@ function Dialogue() {
           {(dl.role === "blacksmith" || dl.role === "alchemist") && <button className="fantasy-btn-primary" onClick={() => openPanel("crafting")}>Open {dl.role === "blacksmith" ? "Blacksmith Forge" : "Alchemy Bench"}</button>}
           {dl.role === "receptionist" && <button className="fantasy-btn-primary" onClick={() => openPanel("guild")}>Open Mission Board</button>}
           {dl.role === "merchant" && <>
+            <button className="fantasy-btn-primary" onClick={() => openPanel("market")}>Open Marketplace</button>
             {SHOP_STOCK.map((s) => <button key={s.id} className="fantasy-btn" onClick={() => buyItem(s.id, s.price)}>Buy {ITEMS[s.id].name} ({s.price}g)</button>)}
             <button className="fantasy-btn-primary" onClick={sellMaterials}>Sell materials</button>
           </>}
@@ -292,6 +300,48 @@ export function Character() {
   );
 }
 
+function HomePanel() {
+  const g = useGame(); const d = g.data;
+  const [homeName, setHomeName] = useState(d.housing.homeName);
+  return <Frame title={d.housing.homeName || "Your Home"} wide>
+    <p className="mb-3 text-sm text-parchment/70">Your Eldergrove cottage is a safe place to rest and keep belongings. Stored items remain in your local save.</p>
+    <div className="mb-4 flex flex-wrap items-end gap-2"><label className="flex-1 text-xs text-parchment/70">Home name<input className="mt-1 w-full rounded border border-gold/30 bg-ink px-3 py-2 text-parchment" value={homeName} maxLength={28} onChange={e=>setHomeName(e.target.value)} /></label><button className="fantasy-btn" onClick={()=>renameHome(homeName)}>Save name</button><button className="fantasy-btn-primary" onClick={()=>rest(0)}>Rest in bed</button></div>
+    <div className="grid gap-4 md:grid-cols-2"><section><h3 className="mb-2 font-display text-lg text-gold">Backpack</h3><div className="max-h-72 space-y-2 overflow-y-auto">{Object.entries(d.inventory).filter(([,n])=>n>0).map(([id,n])=><div key={id} className="parchment-card flex items-center justify-between gap-2 p-2"><span>{ITEMS[id]?.icon} {ITEMS[id]?.name ?? id} ×{n}</span><button className="fantasy-btn" onClick={()=>storeAtHome(id,n)}>Store all</button></div>)}</div></section><section><h3 className="mb-2 font-display text-lg text-gold">Home storage</h3><div className="max-h-72 space-y-2 overflow-y-auto">{Object.entries(d.housing.storage).filter(([,n])=>n>0).map(([id,n])=><div key={id} className="parchment-card flex items-center justify-between gap-2 p-2"><span>{ITEMS[id]?.icon} {ITEMS[id]?.name ?? id} ×{n}</span><button className="fantasy-btn" onClick={()=>retrieveFromHome(id,n)}>Take all</button></div>)}{!Object.keys(d.housing.storage).length&&<p className="text-sm text-parchment/60">Your chest is empty.</p>}</div></section></div>
+  </Frame>;
+}
+
+function Marketplace() {
+  const g=useGame(); const d=g.data; const [,refresh]=useState(0); useEffect(()=>subscribeMultiplayer(()=>refresh(n=>n+1)),[]); const net=getMultiplayerState(); const listings=net.status==="online"?net.marketListings:d.marketListings;
+  const [itemId,setItemId]=useState(Object.keys(d.inventory).find(id=>(d.inventory[id]??0)>0)??"apple");
+  const [quantity,setQuantity]=useState("1"); const [price,setPrice]=useState("5");
+  return <Frame title="Eldergrove Marketplace" wide>
+    <p className="mb-3 text-sm text-parchment/70">Browse village vendor offers and create your own listings. When connected, listings and gold/item settlement are shared and validated by the multiplayer server. Offline listings remain local to this browser.</p>{net.error&&<p className="mb-2 text-sm text-red-300" role="alert">{net.error}</p>}
+    <div className="parchment-card mb-4 grid gap-2 p-3 md:grid-cols-4"><label className="text-xs">Item<select className="mt-1 w-full rounded bg-ink p-2 text-parchment" value={itemId} onChange={e=>setItemId(e.target.value)}>{Object.entries(d.inventory).filter(([,n])=>n>0).map(([id])=><option key={id} value={id}>{ITEMS[id]?.name??id} ({d.inventory[id]})</option>)}</select></label><label className="text-xs">Quantity<input className="mt-1 w-full rounded bg-ink p-2 text-parchment" type="number" min="1" max={d.inventory[itemId]??1} value={quantity} onChange={e=>setQuantity(e.target.value)} /></label><label className="text-xs">Gold per item<input className="mt-1 w-full rounded bg-ink p-2 text-parchment" type="number" min="1" max="100000" value={price} onChange={e=>setPrice(e.target.value)} /></label><button className="fantasy-btn-primary self-end" disabled={!d.inventory[itemId]} onClick={()=>net.status==="online"?listSharedMarketItem(itemId,Number(quantity),Number(price)):createMarketListing(itemId,Number(quantity),Number(price))}>List item</button></div>
+    <div className="grid gap-2 md:grid-cols-2">{listings.map(listing=><div key={listing.id} className="parchment-card p-3"><div className="flex items-start justify-between gap-2"><div><strong>{ITEMS[listing.itemId]?.icon} {ITEMS[listing.itemId]?.name??listing.itemId}</strong><p className="text-xs opacity-70">Seller: {listing.seller} · {listing.sellerType==="village"?"Village vendor":"Player listing"}</p></div><strong>{listing.unitPrice}g each</strong></div><p className="my-2 text-sm">Available: {listing.quantity}</p><div className="flex gap-2">{listing.sellerType==="player"&&listing.seller===d.name?<button className="fantasy-btn" onClick={()=>net.status==="online"?cancelSharedMarketItem(listing.id):cancelMarketListing(listing.id)}>Cancel listing</button>:<button className="fantasy-btn-primary" disabled={d.gold<listing.unitPrice} onClick={()=>net.status==="online"?buySharedMarketItem(listing.id,1):buyMarketListing(listing.id,1)}>Buy 1 · {listing.unitPrice}g</button>}</div></div>)}</div>
+  </Frame>;
+}
+
+function CommunityGuild() {
+  const g=useGame(); const d=g.data; const [name,setName]=useState(""); const [message,setMessage]=useState(""); const [,refresh]=useState(0); useEffect(()=>subscribeMultiplayer(()=>refresh(n=>n+1)),[]); const net=getMultiplayerState(); const activeGuild=net.status==="online"?net.guild:d.guild; const guildOptions=net.status==="online"?net.guilds:availableGuilds;
+  return <Frame title="Guild Hall & Fellowship" wide>
+    {!activeGuild?.id?<><p className="mb-3 text-sm text-parchment/70">Join a frontier company or spend 100 gold to establish your own guild. When connected, guild membership, roster and messages are shared and persisted by the multiplayer server; offline guilds remain local.</p>{net.error&&<p className="mb-2 text-sm text-red-300" role="alert">{net.error}</p>}<div className="parchment-card mb-4 p-3"><h3 className="mb-2 font-display text-lg text-gold">Found a guild</h3><div className="flex gap-2"><input className="min-w-0 flex-1 rounded bg-ink px-3 py-2 text-parchment" placeholder="Guild name" maxLength={28} value={name} onChange={e=>setName(e.target.value)} /><button className="fantasy-btn-primary" onClick={()=>net.status==="online"?createSharedGuild(name):createPlayerGuild(name)}>Create · 100g</button></div></div><h3 className="mb-2 font-display text-lg text-gold">Frontier guilds recruiting</h3>{guildOptions.map(item=><div key={item.id} className="parchment-card mb-2 flex items-center justify-between gap-2 p-3"><div><strong>{item.name}</strong><p className="text-xs opacity-70">Leader: {item.leader} · {item.members} members</p></div><button className="fantasy-btn-primary" onClick={()=>net.status==="online"?joinSharedGuild(item.id):joinAvailableGuild(item.id)}>Join guild</button></div>)}</>:<><div className="mb-3 flex items-center justify-between"><div><h3 className="font-display text-xl text-gold">{activeGuild?.name}</h3><p className="text-xs text-parchment/70">Your rank: {activeGuild?.role}</p></div><button className="fantasy-btn" onClick={()=>net.status==="online"?leaveSharedGuild():leavePlayerGuild()}>Leave guild</button></div><div className="grid gap-4 md:grid-cols-2"><section><h4 className="mb-2 font-display text-lg text-gold">Roster</h4>{activeGuild?.members.map(member=><div key={member.id} className="parchment-card mb-2 flex justify-between p-2"><span>{member.name}</span><span className="text-xs capitalize">{member.role}</span></div>)}</section><section><h4 className="mb-2 font-display text-lg text-gold">Guild notice board</h4><div className="mb-2 max-h-52 space-y-2 overflow-y-auto">{activeGuild?.messages.map(m=><div key={m.id} className="parchment-card p-2"><strong className="text-xs">{m.author}</strong><p className="text-sm">{m.text}</p></div>)}{!activeGuild?.messages.length&&<p className="text-sm text-parchment/60">No messages yet. Leave a note for your company.</p>}</div><form className="flex gap-2" onSubmit={e=>{e.preventDefault();(net.status==="online"?postSharedGuildMessage(message):postGuildMessage(message));setMessage("")}}><input className="min-w-0 flex-1 rounded bg-ink px-3 py-2 text-parchment" maxLength={240} value={message} onChange={e=>setMessage(e.target.value)} placeholder="Write a guild notice"/><button className="fantasy-btn-primary" type="submit" disabled={!message.trim()}>Post</button></form></section></div></>}
+  </Frame>;
+}
+
+function MultiplayerPanel() {
+  const [, refresh] = useState(0); const [username,setUsername]=useState(""); const [password,setPassword]=useState(""); const [register,setRegister]=useState(false); const [chat,setChat]=useState("");
+  useEffect(()=>{const unsub=subscribeMultiplayer(()=>refresh(n=>n+1));reconnectMultiplayer();return unsub},[]);
+  const net=getMultiplayerState(); const sendChat=(e:React.FormEvent)=>{e.preventDefault();if(chat.trim()){sendNetwork({type:"chat",text:chat});setChat("")}};
+  return <Frame title="Azura — Shared World" wide>
+    <p className="mb-3 text-sm text-parchment/70">Connect to a running Azura multiplayer service to meet other adventurers. Accounts are stored on that server; your character inventory and gold are synchronised to the server when you first connect; other progression remains in your local save.</p>
+    <div className="mb-4 flex flex-wrap items-center gap-3"><span className={`rounded px-3 py-1 text-sm ${net.status==="online"?"bg-emerald-900 text-emerald-100":"bg-slate-800 text-parchment"}`}>● {net.status}</span>{net.username&&<span className="text-sm text-parchment">Signed in as {net.username}</span>}{net.status==="online"&&<button className="fantasy-btn" onClick={disconnectMultiplayer}>Sign out</button>}</div>
+    {net.status!=="online"&&<form className="parchment-card mb-4 grid gap-2 p-3 md:grid-cols-3" onSubmit={e=>{e.preventDefault();authenticateMultiplayer(username,password,register)}}><label className="text-xs">Username<input className="mt-1 w-full rounded bg-ink px-3 py-2 text-parchment" minLength={3} maxLength={20} autoComplete="username" value={username} onChange={e=>setUsername(e.target.value)} required /></label><label className="text-xs">Password<input className="mt-1 w-full rounded bg-ink px-3 py-2 text-parchment" type="password" minLength={8} maxLength={128} autoComplete={register?"new-password":"current-password"} value={password} onChange={e=>setPassword(e.target.value)} required /></label><div className="flex items-end gap-2"><button className="fantasy-btn-primary" type="submit">{register?"Create account":"Sign in"}</button><button className="fantasy-btn" type="button" onClick={()=>setRegister(v=>!v)}>{register?"I have an account":"Register"}</button></div></form>}
+    {net.error&&<p className="mb-3 text-sm text-red-300" role="alert">{net.error}</p>}
+    {net.status==="online"&&<div className="grid gap-4 md:grid-cols-2"><section><h3 className="mb-2 font-display text-lg text-gold">Adventurers nearby ({net.players.length})</h3><div className="max-h-56 space-y-2 overflow-y-auto">{net.players.map(p=><div key={p.id} className="parchment-card flex items-center justify-between gap-2 p-2"><span>{p.name}</span><button className="fantasy-btn" disabled={!!net.party} onClick={()=>sendNetwork({type:"party:invite",targetId:p.id})}>Invite to party</button></div>)}{!net.players.length&&<p className="text-sm text-parchment/60">No other players are in this area yet.</p>}</div><div className="mt-3 flex flex-wrap gap-2">{!net.party?<button className="fantasy-btn-primary" onClick={()=>sendNetwork({type:"party:create"})}>Create party</button>:<button className="fantasy-btn" onClick={()=>sendNetwork({type:"party:leave"})}>Leave party ({net.party.members.length}/5)</button>}{net.invitation&&<button className="fantasy-btn-primary" onClick={()=>{sendNetwork({type:"party:accept",partyId:net.invitation!.partyId});refresh(n=>n+1)}}>Accept invite from {net.invitation.from}</button>}</div>{net.party&&<p className="mt-2 text-xs text-parchment/70">Party members: {net.party.members.length} · Party formed</p>}</section><section><h3 className="mb-2 font-display text-lg text-gold">Local area chat</h3><div className="mb-2 h-56 space-y-2 overflow-y-auto rounded border border-gold/20 bg-ink/40 p-3">{net.messages.filter(m=>m.scene===game.data.pos.scene).map(m=><p key={m.id} className="text-sm"><strong className="text-gold">{m.name}: </strong><span className="text-parchment">{m.text}</span></p>)}{!net.messages.length&&<p className="text-sm text-parchment/50">No messages yet.</p>}</div><form className="flex gap-2" onSubmit={sendChat}><input className="min-w-0 flex-1 rounded bg-ink px-3 py-2 text-parchment" maxLength={240} value={chat} onChange={e=>setChat(e.target.value)} placeholder="Say something to nearby players"/><button className="fantasy-btn-primary" type="submit" disabled={!chat.trim()}>Send</button></form></section></div>}
+    <p className="mt-4 text-xs text-parchment/50">Server address: {import.meta.env.VITE_AZURA_SERVER_URL || "http://localhost:8787"}. The server must be started separately; see MULTIPLAYER.md.</p>
+  </Frame>;
+}
+
 export function Game() {
   const ref = useRef<HTMLCanvasElement>(null);
   const g = useGame();
@@ -306,6 +356,10 @@ export function Game() {
       <Hud />
       {g.ui.panel === "dialogue" && g.ui.dialogue && <Dialogue />}
       {g.ui.panel === "guild" && <GuildBoard />}
+      {g.ui.panel === "home" && <HomePanel />}
+      {g.ui.panel === "market" && <Marketplace />}
+      {g.ui.panel === "communityGuild" && <CommunityGuild />}
+      {g.ui.panel === "multiplayer" && <MultiplayerPanel />}
       {g.ui.panel === "quests" && <Quests />}
       {g.ui.panel === "inventory" && <Inventory />}
       {g.ui.panel === "crafting" && <Crafting />}

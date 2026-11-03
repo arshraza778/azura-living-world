@@ -45,7 +45,7 @@ export interface BuildingDef {
   roof: string;
   wall: string;
   sign?: boolean;
-  enter?: "guild" | "inn" | "cottage";
+  enter?: "guild" | "inn" | "cottage" | "home";
   lockedText?: string;
 }
 
@@ -55,7 +55,7 @@ export const BUILDINGS: BuildingDef[] = [
   { id: "shop", name: "Merchant's Row", x: 92, y: 75, w: 6, h: 5, roof: "#7a5a2a", wall: "#d9c9a8", sign: true, lockedText: "Goods are sold at the stall out front." },
   { id: "smithy", name: "Emberforge Smithy", x: 94, y: 84, w: 5, h: 4, roof: "#4a4a52", wall: "#b8a88a", sign: true, lockedText: "The forge is cold today. The smith is off gathering ore." },
   { id: "house1", name: "Cottage", x: 113, y: 84, w: 5, h: 4, roof: "#9a4a3a", wall: "#e6d8bc", enter: "cottage" },
-  { id: "house2", name: "Cottage", x: 101, y: 88, w: 5, h: 4, roof: "#5a7a3a", wall: "#e2d4b6", lockedText: "It's locked." },
+  { id: "house2", name: "Your Cottage", x: 101, y: 88, w: 5, h: 4, roof: "#5a7a3a", wall: "#e2d4b6", enter: "home" },
   { id: "house3", name: "Cottage", x: 121, y: 82, w: 4, h: 4, roof: "#8a5a3a", wall: "#dccdb0", lockedText: "It's locked." },
   { id: "house4", name: "Cottage", x: 88, y: 69, w: 5, h: 4, roof: "#3f6a7a", wall: "#e4d6b8", lockedText: "It's locked." },
   { id: "house5", name: "Elder's House", x: 117, y: 63, w: 6, h: 5, roof: "#6a3a5a", wall: "#e8dcc2", lockedText: "The elder is resting. Come back later." },
