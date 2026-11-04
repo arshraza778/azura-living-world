@@ -1,10 +1,11 @@
 import type { Dir, MonsterKind, NPC, Scene, SceneId, Trigger } from "../core/types";
 import { MONSTERS } from "../data/monsters";
-import { lookFor, POIS } from "../data/places";
+import { BUILDINGS, lookFor, POIS } from "../data/places";
 import { REGIONS, TILE } from "../data/regions";
 import { ITEMS } from "../data/items";
 import { CHUNK, drawCharacter, drawDecor, drawMonster, drawTraps, drawWaterFx, getChunk, trapUp } from "../render/draw";
 import { getScene } from "../world/scenes";
+import { depth, facing, fromIso, ISO_A, isoFacing, screenToWorldDir, toIso, TH } from "../render/iso";
 import { getRemotePlayers, publishPosition } from "../network/multiplayer";
 import { addItem, addXp, attackPower, checkMissionReadiness, emit, game, openDialogue, openPanel, save, toast, gatherResource, addMasteryXp, statEffects, incomingDamage, staminaCost } from "../state/store";
 
@@ -19,6 +20,12 @@ export class Engine {
   scene!: Scene;
   monsters = new Map<SceneId, Monster[]>();
   dir: Dir = 0;
+  sdir: Dir = 0;
+  zoomMul = 1;
+  camX = 0;
+  camY = 0;
+  camInit = false;
+  camScene = "";
   walk = 0;
   atk = 0;
   atkCd = 0;
@@ -47,6 +54,8 @@ export class Engine {
     window.addEventListener("keydown", this.kd);
     window.addEventListener("keyup", this.ku);
     this.canvas.addEventListener("click", this.mc);
+    this.canvas.addEventListener("wheel", this.wheel, { passive: false });
+    window.addEventListener("azura:zoom", this.zoomEv as EventListener);
     this.raf = requestAnimationFrame(this.loop);
   }
   destroy() {
@@ -56,7 +65,12 @@ export class Engine {
     window.removeEventListener("keydown", this.kd);
     window.removeEventListener("keyup", this.ku);
     this.canvas.removeEventListener("click", this.mc);
+    this.canvas.removeEventListener("wheel", this.wheel);
+    window.removeEventListener("azura:zoom", this.zoomEv as EventListener);
   }
+  zoomBy(f: number) { this.zoomMul = Math.max(0.6, Math.min(1.8, this.zoomMul * f)); }
+  wheel = (e: WheelEvent) => { e.preventDefault(); this.zoomBy(Math.exp(-e.deltaY * 0.0012)); };
+  zoomEv = (e: Event) => { const f = (e as CustomEvent<number>).detail; if (f === 0) this.zoomMul = 1; else this.zoomBy(f); };
   networkPosition = (event: Event) => {
     const detail = (event as CustomEvent<{ scene: SceneId; x: number; y: number }>).detail;
     if (detail && detail.scene && Number.isFinite(detail.x) && Number.isFinite(detail.y)) this.enter(detail.scene, detail.x, detail.y, true);
@@ -72,6 +86,8 @@ export class Engine {
     if (k === "k") return openPanel("crafting");
     if (k === "v") return openPanel("farming");
     if (game.ui.panel) return;
+    if (k === "=" || k === "+") return this.zoomBy(1.15);
+    if (k === "-" || k === "_") return this.zoomBy(1 / 1.15);
     if (k === "e") this.interact();
     if (k === " ") this.evade();
     if (k === "f") this.attack();
@@ -295,12 +311,14 @@ export class Engine {
       const moving = vx || vy;
       const sprint = k.has("shift") && d.stamina > 1 && moving;
       if (moving) {
-        const l = Math.hypot(vx, vy);
+        // input is screen-relative; convert to world space for isometric movement
+        const [wx, wy] = screenToWorldDir(vx, vy);
         const sp = 4.2 * statEffects(d).movement * (sprint ? 1.6 : 1) * dt;
-        const nx = p.x + (vx / l) * sp, ny = p.y + (vy / l) * sp;
+        const nx = p.x + wx * sp, ny = p.y + wy * sp;
         if (!this.blocked(nx, p.y)) p.x = nx;
         if (!this.blocked(p.x, ny)) p.y = ny;
-        this.dir = Math.abs(vx) > Math.abs(vy) ? (vx < 0 ? 1 : 2) : vy < 0 ? 3 : 0;
+        this.dir = Math.abs(wx) > Math.abs(wy) ? (wx < 0 ? 1 : 2) : wy < 0 ? 3 : 0;
+        this.sdir = facing(vx, vy);
         this.walk += dt * (sprint ? 1.5 : 1);
       }
       d.stamina = sprint ? Math.max(0, d.stamina - staminaCost(d, 25) * dt) : Math.min(d.maxStamina, d.stamina + 14 * dt);
@@ -411,56 +429,99 @@ export class Engine {
     const dpr = window.devicePixelRatio || 1;
     const W = c.clientWidth, H = c.clientHeight;
     if (c.width !== Math.round(W * dpr) || c.height !== Math.round(H * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
-    const zoom = Math.max(1.1, Math.min(2.2, H / (17 * TILE)));
+    // ---- isometric camera ----
+    const zoom = Math.max(0.9, Math.min(2.6, H / (17 * TILE))) * this.zoomMul;
     const vw = W / zoom, vh = H / zoom;
-    let cx = p.x * TILE - vw / 2, cy = p.y * TILE - vh / 2;
-    const ww = s.w * TILE, wh = s.h * TILE;
-    cx = ww < vw ? (ww - vw) / 2 : Math.max(0, Math.min(ww - vw, cx));
-    cy = wh < vh ? (wh - vh) / 2 : Math.max(0, Math.min(wh - vh, cy));
+    const [px0, py0] = toIso(p.x, p.y);
+    let tx = px0 - vw / 2, ty = py0 - 16 - vh / 2;
+    // camera bounds: iso bounding box of the scene
+    const bx0 = -s.h * TILE * ISO_A, bx1 = s.w * TILE * ISO_A, by0 = -TILE * 2, by1 = ((s.w + s.h) * TILE * ISO_A) / 2;
+    tx = bx1 - bx0 < vw ? (bx0 + bx1 - vw) / 2 : Math.max(bx0, Math.min(bx1 - vw, tx));
+    ty = by1 - by0 < vh ? (by0 + by1 - vh) / 2 : Math.max(by0, Math.min(by1 - vh, ty));
+    if (!this.camInit || this.camScene !== s.id) { this.camX = tx; this.camY = ty; this.camInit = true; this.camScene = s.id; }
+    this.camX += (tx - this.camX) * 0.18; this.camY += (ty - this.camY) * 0.18;
+    if (Math.abs(tx - this.camX) > vw) this.camX = tx;
+    if (Math.abs(ty - this.camY) > vh) this.camY = ty;
+    const cx = this.camX, cy = this.camY;
+    const scr = (wx: number, wy: number): [number, number] => { const [ix, iy] = toIso(wx, wy); return [(ix - cx) * zoom, (iy - cy) * zoom]; };
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = s.region ? "#174268" : "#0b0b10";
     ctx.fillRect(0, 0, c.width, c.height);
-    ctx.setTransform(zoom * dpr, 0, 0, zoom * dpr, -cx * zoom * dpr, -cy * zoom * dpr);
+    const camM: [number, number, number, number, number, number] = [zoom * dpr, 0, 0, zoom * dpr, -cx * zoom * dpr, -cy * zoom * dpr];
+    ctx.setTransform(...camM);
+    // visible world-tile range (inverse-project screen corners) for culling
+    const corners = [fromIso(cx, cy), fromIso(cx + vw, cy), fromIso(cx, cy + vh), fromIso(cx + vw, cy + vh)];
+    const x0 = Math.floor(Math.min(...corners.map((q) => q[0]))) - 2, x1 = Math.ceil(Math.max(...corners.map((q) => q[0]))) + 2;
+    const y0 = Math.floor(Math.min(...corners.map((q) => q[1]))) - 2, y1 = Math.ceil(Math.max(...corners.map((q) => q[1]))) + 2;
+    const inView = (wx: number, wy: number, m = 0) => { const [ix, iy] = toIso(wx, wy); return ix > cx - 120 - m && ix < cx + vw + 120 + m && iy > cy - 40 - m && iy < cy + vh + 220 + m; };
+    // ground plane: affine projection of the pre-painted chunk canvases
+    ctx.save();
+    ctx.transform(ISO_A, ISO_A / 2, -ISO_A, ISO_A / 2, 0, 0);
     const CS = CHUNK * TILE;
-    for (let y = Math.floor(cy / CS); y <= Math.floor((cy + vh) / CS); y++)
-      for (let x = Math.floor(cx / CS); x <= Math.floor((cx + vw) / CS); x++) {
-        if (x < 0 || y < 0 || x * CHUNK >= s.w || y * CHUNK >= s.h) continue;
+    for (let y = Math.floor(Math.max(0, y0) / CHUNK); y <= Math.floor(y1 / CHUNK); y++)
+      for (let x = Math.floor(Math.max(0, x0) / CHUNK); x <= Math.floor(x1 / CHUNK); x++) {
+        if (x * CHUNK >= s.w || y * CHUNK >= s.h) continue;
+        if (!inView((x + 0.5) * CHUNK, (y + 0.5) * CHUNK, CHUNK * TILE)) continue;
         ctx.drawImage(getChunk(s, x, y), x * CS, y * CS);
       }
-    const x0 = Math.floor(cx / TILE) - 1, y0 = Math.floor(cy / TILE) - 1, x1 = Math.ceil((cx + vw) / TILE) + 1, y1 = Math.ceil((cy + vh) / TILE) + 1;
-    drawWaterFx(ctx, s, x0, y0, x1, y1, this.t);
+    drawWaterFx(ctx, s, Math.max(0, x0), Math.max(0, y0), Math.min(s.w, x1), Math.min(s.h, y1), this.t);
     drawTraps(ctx, s, this.t);
-    const items: { y: number; f: () => void }[] = [];
+    ctx.restore();
+    // upright sprites: each is drawn in its original local space, translated onto its iso ground anchor
+    type Item = { k: number; ax: number; ay: number; ix: number; iy: number; f: () => void };
+    const items: Item[] = [];
+    const add = (wx: number, wy: number, f: () => void, k = depth(wx, wy)) => {
+      if (!inView(wx, wy)) return;
+      const [ix, iy] = toIso(wx, wy);
+      items.push({ k, ax: wx * TILE, ay: wy * TILE, ix, iy, f });
+    };
     for (const d of s.decor) {
-      const big = d.kind === "building" ? (d.w ?? 1) + 2 : 4;
-      if (d.x < x0 - big || d.x > x1 + big || d.y < y0 - 1 || d.y > y1 + big + 2) continue;
-      items.push({ y: d.y, f: () => drawDecor(ctx, d, this.t) });
+      if (d.kind === "building") {
+        const b = BUILDINGS.find((q) => q.id === d.label);
+        if (!b) continue;
+        const fx = b.x + b.w / 2, fy = b.y + b.h / 2;
+        if (!inView(fx, fy, 200)) continue;
+        const [ix, iy] = toIso(fx, fy);
+        items.push({ k: depth(fx, fy) + 0.5, ax: fx * TILE, ay: (b.y + b.h) * TILE, ix, iy: iy + ((b.w + b.h) / 4) * TH, f: () => drawDecor(ctx, d, this.t) });
+        continue;
+      }
+      if (d.x < x0 - 4 || d.x > x1 + 4 || d.y < y0 - 4 || d.y > y1 + 4) continue;
+      add(d.x, d.y, () => drawDecor(ctx, d, this.t));
     }
-    for (const n of s.npcs) items.push({ y: n.y, f: () => drawCharacter(ctx, n.x, n.y, n.dir, n.walk, n.look) });
-    for (const remote of getRemotePlayers(s.id)) items.push({ y: remote.y, f: () => { const a = remote.appearance; const outfit = a?.outfit ?? "wanderer"; const hairStyle = a?.hairStyle ?? "short"; const hairColor = a?.hairColor ?? "#2a3a5a"; drawCharacter(ctx, remote.x, remote.y, 0, this.t, lookFor({ outfit, hairStyle, hairColor })); ctx.save(); ctx.font = "11px sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = "#fff2c2"; ctx.strokeStyle = "#17151d"; ctx.lineWidth = 3; ctx.strokeText(remote.name, remote.x * TILE, remote.y * TILE - 30); ctx.fillText(remote.name, remote.x * TILE, remote.y * TILE - 30); ctx.restore(); } });
-    for (const m of this.monsters.get(s.id) ?? []) if (m.dead <= 0) items.push({ y: m.y, f: () => {
+    for (const n of s.npcs) add(n.x, n.y, () => drawCharacter(ctx, n.x, n.y, isoFacing(n.dir), n.walk, n.look));
+    for (const remote of getRemotePlayers(s.id)) add(remote.x, remote.y, () => { const a = remote.appearance; const outfit = a?.outfit ?? "wanderer"; const hairStyle = a?.hairStyle ?? "short"; const hairColor = a?.hairColor ?? "#2a3a5a"; drawCharacter(ctx, remote.x, remote.y, 0, this.t, lookFor({ outfit, hairStyle, hairColor })); ctx.save(); ctx.font = "11px sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = "#fff2c2"; ctx.strokeStyle = "#17151d"; ctx.lineWidth = 3; ctx.strokeText(remote.name, remote.x * TILE, remote.y * TILE - 30); ctx.fillText(remote.name, remote.x * TILE, remote.y * TILE - 30); ctx.restore(); });
+    for (const m of this.monsters.get(s.id) ?? []) if (m.dead <= 0) add(m.x, m.y, () => {
       drawMonster(ctx, m.kind, m.x, m.y, m.t, m.hurt, m.hp / MONSTERS[m.kind].hp, MONSTERS[m.kind].size);
       if (m.kind === "hollowroot_guardian" && m.cd > 0 && m.cd < 0.42) {
         ctx.save(); ctx.strokeStyle = `rgba(70,235,210,${0.45 + Math.sin(this.t * 18) * 0.3})`; ctx.lineWidth = 2.5;
         ctx.beginPath(); ctx.ellipse(m.x * TILE, m.y * TILE, TILE * (1.2 + (0.42 - m.cd) * 3), TILE * (0.65 + (0.42 - m.cd) * 2), 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
       }
-    } });
-    for (const node of this.resources.get(s.id) ?? []) if (node.cooldown <= 0) items.push({ y: node.y, f: () => { ctx.save(); ctx.globalAlpha = .92; ctx.font = "19px sans-serif"; ctx.textAlign = "center"; ctx.shadowColor = "#b6f2a2"; ctx.shadowBlur = 9; ctx.fillText(node.icon, node.x * TILE, node.y * TILE - 8); ctx.restore(); } });
-    for (const drop of this.drops) if (drop.scene === s.id) items.push({ y: drop.y + 0.02, f: () => { const def = ITEMS[drop.id]; ctx.save(); ctx.fillStyle = "rgba(12,18,16,0.72)"; ctx.beginPath(); ctx.ellipse(drop.x * TILE, drop.y * TILE - 5, 13, 8, 0, 0, Math.PI * 2); ctx.fill(); ctx.font = "18px sans-serif"; ctx.textAlign = "center"; ctx.fillText(def?.icon ?? "✦", drop.x * TILE, drop.y * TILE - 10 - Math.sin(this.t * 3 + drop.x) * 2); ctx.restore(); } });
-    items.push({ y: p.y, f: () => drawCharacter(ctx, p.x, p.y, this.dir, this.walk, lookFor(game.data.appearance), this.atk, this.hurt) });
-    items.sort((a, b) => a.y - b.y).forEach((i) => i.f());
+    });
+    for (const node of this.resources.get(s.id) ?? []) if (node.cooldown <= 0) add(node.x, node.y, () => { ctx.save(); ctx.globalAlpha = .92; ctx.font = "19px sans-serif"; ctx.textAlign = "center"; ctx.shadowColor = "#b6f2a2"; ctx.shadowBlur = 9; ctx.fillText(node.icon, node.x * TILE, node.y * TILE - 8); ctx.restore(); });
+    for (const drop of this.drops) if (drop.scene === s.id) add(drop.x, drop.y, () => { const def = ITEMS[drop.id]; ctx.save(); ctx.fillStyle = "rgba(12,18,16,0.72)"; ctx.beginPath(); ctx.ellipse(drop.x * TILE, drop.y * TILE - 5, 13, 8, 0, 0, Math.PI * 2); ctx.fill(); ctx.font = "18px sans-serif"; ctx.textAlign = "center"; ctx.fillText(def?.icon ?? "✦", drop.x * TILE, drop.y * TILE - 10 - Math.sin(this.t * 3 + drop.x) * 2); ctx.restore(); }, depth(drop.x, drop.y) + 0.02);
+    // player: always drawn, with an occlusion silhouette when behind tall objects
+    { const [ix, iy] = toIso(p.x, p.y); items.push({ k: depth(p.x, p.y), ax: p.x * TILE, ay: p.y * TILE, ix, iy, f: () => drawCharacter(ctx, p.x, p.y, this.sdir, this.walk, lookFor(game.data.appearance), this.atk, this.hurt) }); }
+    items.sort((a, b) => a.k - b.k);
+    for (const it of items) {
+      ctx.setTransform(...camM);
+      ctx.translate(it.ix - it.ax, it.iy - it.ay);
+      it.f();
+    }
+    ctx.setTransform(...camM);
+    // faint player silhouette on top so the hero is never fully hidden by trees/buildings
+    { const [ix, iy] = toIso(p.x, p.y); ctx.translate(ix - p.x * TILE, iy - p.y * TILE); ctx.globalAlpha = 0.22; drawCharacter(ctx, p.x, p.y, this.sdir, this.walk, lookFor(game.data.appearance), this.atk, this.hurt); ctx.globalAlpha = 1; }
     // lighting
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const dark = this.tint.dark;
     if (dark > 0.02) {
-      const sx = (p.x * TILE - cx) * zoom, sy = (p.y * TILE - 16 - cy) * zoom;
+      const [sx, sy0] = scr(p.x, p.y); const sy = sy0 - 16 * zoom;
       const g = ctx.createRadialGradient(sx, sy, 30, sx, sy, Math.max(W, H) * 0.45);
       g.addColorStop(0, "rgba(5,5,15,0)");
       g.addColorStop(1, `rgba(5,5,15,${dark})`);
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, W, H);
       for (const l of s.lights) {
-        const lx = (l.x * TILE - cx) * zoom, ly = (l.y * TILE - cy) * zoom;
+        const [lx, ly] = scr(l.x, l.y);
         const lg = ctx.createRadialGradient(lx, ly, 0, lx, ly, l.r * TILE * zoom * 0.6);
         lg.addColorStop(0, "rgba(255,170,80,0.28)");
         lg.addColorStop(1, "rgba(255,170,80,0)");
