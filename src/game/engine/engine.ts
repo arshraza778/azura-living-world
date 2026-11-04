@@ -295,12 +295,14 @@ export class Engine {
       const moving = vx || vy;
       const sprint = k.has("shift") && d.stamina > 1 && moving;
       if (moving) {
-        const l = Math.hypot(vx, vy);
+        // input is screen-relative; convert to world space for isometric movement
+        const [wx, wy] = screenToWorldDir(vx, vy);
         const sp = 4.2 * statEffects(d).movement * (sprint ? 1.6 : 1) * dt;
-        const nx = p.x + (vx / l) * sp, ny = p.y + (vy / l) * sp;
+        const nx = p.x + wx * sp, ny = p.y + wy * sp;
         if (!this.blocked(nx, p.y)) p.x = nx;
         if (!this.blocked(p.x, ny)) p.y = ny;
-        this.dir = Math.abs(vx) > Math.abs(vy) ? (vx < 0 ? 1 : 2) : vy < 0 ? 3 : 0;
+        this.dir = Math.abs(wx) > Math.abs(wy) ? (wx < 0 ? 1 : 2) : wy < 0 ? 3 : 0;
+        this.sdir = facing(vx, vy);
         this.walk += dt * (sprint ? 1.5 : 1);
       }
       d.stamina = sprint ? Math.max(0, d.stamina - staminaCost(d, 25) * dt) : Math.min(d.maxStamina, d.stamina + 14 * dt);
