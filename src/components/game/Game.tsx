@@ -424,6 +424,11 @@ export function Game() {
   return (
     <div className="relative h-screen w-screen touch-none overflow-hidden bg-ink font-body select-none">
       <canvas ref={ref} className="absolute inset-0 h-full w-full" />
+      <div className="absolute right-3 top-1/2 z-20 flex -translate-y-1/2 flex-col gap-1">
+        {([["+", 1.2, "Zoom in"], ["−", 1 / 1.2, "Zoom out"], ["⟳", 0, "Reset zoom"]] as const).map(([l, f, t]) => (
+          <button key={t} aria-label={t} title={t} className="fantasy-btn h-9 w-9 p-0" onClick={() => window.dispatchEvent(new CustomEvent("azura:zoom", { detail: f }))}>{l}</button>
+        ))}
+      </div>
       <Hud />
       <TouchControls />
       {g.ui.panel === "dialogue" && g.ui.dialogue && <Dialogue />}

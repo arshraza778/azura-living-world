@@ -1,12 +1,11 @@
 import type { Dir, MonsterKind, NPC, Scene, SceneId, Trigger } from "../core/types";
 import { MONSTERS } from "../data/monsters";
-import { lookFor, POIS } from "../data/places";
+import { BUILDINGS, lookFor, POIS } from "../data/places";
 import { REGIONS, TILE } from "../data/regions";
 import { ITEMS } from "../data/items";
 import { CHUNK, drawCharacter, drawDecor, drawMonster, drawTraps, drawWaterFx, getChunk, trapUp } from "../render/draw";
 import { getScene } from "../world/scenes";
 import { depth, facing, fromIso, ISO_A, isoFacing, screenToWorldDir, toIso, TH } from "../render/iso";
-import { BUILDINGS } from "../data/places";
 import { getRemotePlayers, publishPosition } from "../network/multiplayer";
 import { addItem, addXp, attackPower, checkMissionReadiness, emit, game, openDialogue, openPanel, save, toast, gatherResource, addMasteryXp, statEffects, incomingDamage, staminaCost } from "../state/store";
 
