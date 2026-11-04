@@ -5,6 +5,8 @@ import { REGIONS, TILE } from "../data/regions";
 import { ITEMS } from "../data/items";
 import { CHUNK, drawCharacter, drawDecor, drawMonster, drawTraps, drawWaterFx, getChunk, trapUp } from "../render/draw";
 import { getScene } from "../world/scenes";
+import { depth, facing, fromIso, ISO_A, isoFacing, screenToWorldDir, toIso, TH } from "../render/iso";
+import { BUILDINGS } from "../data/places";
 import { getRemotePlayers, publishPosition } from "../network/multiplayer";
 import { addItem, addXp, attackPower, checkMissionReadiness, emit, game, openDialogue, openPanel, save, toast, gatherResource, addMasteryXp, statEffects, incomingDamage, staminaCost } from "../state/store";
 
@@ -19,6 +21,12 @@ export class Engine {
   scene!: Scene;
   monsters = new Map<SceneId, Monster[]>();
   dir: Dir = 0;
+  sdir: Dir = 0;
+  zoomMul = 1;
+  camX = 0;
+  camY = 0;
+  camInit = false;
+  camScene = "";
   walk = 0;
   atk = 0;
   atkCd = 0;
@@ -47,6 +55,8 @@ export class Engine {
     window.addEventListener("keydown", this.kd);
     window.addEventListener("keyup", this.ku);
     this.canvas.addEventListener("click", this.mc);
+    this.canvas.addEventListener("wheel", this.wheel, { passive: false });
+    window.addEventListener("azura:zoom", this.zoomEv as EventListener);
     this.raf = requestAnimationFrame(this.loop);
   }
   destroy() {
@@ -56,7 +66,12 @@ export class Engine {
     window.removeEventListener("keydown", this.kd);
     window.removeEventListener("keyup", this.ku);
     this.canvas.removeEventListener("click", this.mc);
+    this.canvas.removeEventListener("wheel", this.wheel);
+    window.removeEventListener("azura:zoom", this.zoomEv as EventListener);
   }
+  zoomBy(f: number) { this.zoomMul = Math.max(0.6, Math.min(1.8, this.zoomMul * f)); }
+  wheel = (e: WheelEvent) => { e.preventDefault(); this.zoomBy(Math.exp(-e.deltaY * 0.0012)); };
+  zoomEv = (e: Event) => { const f = (e as CustomEvent<number>).detail; if (f === 0) this.zoomMul = 1; else this.zoomBy(f); };
   networkPosition = (event: Event) => {
     const detail = (event as CustomEvent<{ scene: SceneId; x: number; y: number }>).detail;
     if (detail && detail.scene && Number.isFinite(detail.x) && Number.isFinite(detail.y)) this.enter(detail.scene, detail.x, detail.y, true);
@@ -72,6 +87,8 @@ export class Engine {
     if (k === "k") return openPanel("crafting");
     if (k === "v") return openPanel("farming");
     if (game.ui.panel) return;
+    if (k === "=" || k === "+") return this.zoomBy(1.15);
+    if (k === "-" || k === "_") return this.zoomBy(1 / 1.15);
     if (k === "e") this.interact();
     if (k === " ") this.evade();
     if (k === "f") this.attack();
@@ -498,14 +515,14 @@ export class Engine {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const dark = this.tint.dark;
     if (dark > 0.02) {
-      const sx = (p.x * TILE - cx) * zoom, sy = (p.y * TILE - 16 - cy) * zoom;
+      const [sx, sy0] = scr(p.x, p.y); const sy = sy0 - 16 * zoom;
       const g = ctx.createRadialGradient(sx, sy, 30, sx, sy, Math.max(W, H) * 0.45);
       g.addColorStop(0, "rgba(5,5,15,0)");
       g.addColorStop(1, `rgba(5,5,15,${dark})`);
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, W, H);
       for (const l of s.lights) {
-        const lx = (l.x * TILE - cx) * zoom, ly = (l.y * TILE - cy) * zoom;
+        const [lx, ly] = scr(l.x, l.y);
         const lg = ctx.createRadialGradient(lx, ly, 0, lx, ly, l.r * TILE * zoom * 0.6);
         lg.addColorStop(0, "rgba(255,170,80,0.28)");
         lg.addColorStop(1, "rgba(255,170,80,0)");
