@@ -14,6 +14,7 @@ const TRANSITION_POSITIONS = {
   'guild>overworld': [106,76.5], 'inn>overworld': [117.5,80.2], 'cottage>overworld': [115.5,88.3], 'home>overworld': [103.5,92.2], 'dungeon1>overworld': [38.5,105.5],
   'dungeon1>dungeon2': [2.5,1.5], 'dungeon2>dungeon1': [28.5,12.5]
 };
+const SESSIONS_FILE_NAME = 'sessions.json';
 const sessions = new Map();
 const sockets = new Map();
 const parties = new Map();
@@ -37,6 +38,8 @@ function writeJson(file, value) {
   fs.writeFileSync(temp, JSON.stringify(value, null, 2), { mode: 0o600 });
   fs.renameSync(temp, file);
 }
+function persistSessions() { const now = Date.now(); writeJson(path.join(DATA_DIR, SESSIONS_FILE_NAME), Object.fromEntries([...sessions].filter(([, v]) => v.expires > now))); }
+function loadSessions() { const saved = readJson(path.join(DATA_DIR, SESSIONS_FILE_NAME), {}); for (const [k, v] of Object.entries(saved)) if (v && typeof v.user === 'string' && v.expires > Date.now()) sessions.set(k, v); }
 function persistWorld() { writeJson(WORLD_FILE, world); }
 function json(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'cache-control': 'no-store' });
@@ -63,6 +66,7 @@ function validPassword(password, record) {
 function issueSession(user) {
   const token = crypto.randomBytes(32).toString('hex');
   sessions.set(token, { user, expires: Date.now() + 30 * 24 * 60 * 60 * 1000 });
+  persistSessions();
   return token;
 }
 function authenticate(req) {
@@ -80,7 +84,16 @@ function wsFrame(value) {
 function send(client, value) { if (!client.closed) client.socket.write(wsFrame(value)); }
 function broadcast(scene, value, except) { for (const c of sockets.values()) if (c !== except && c.player?.scene === scene) send(c, value); }
 function playerSnapshot(scene, exceptId) {
-  return [...sockets.values()].filter(c => c.player && (!scene || c.player.scene === scene) && c.player.id !== exceptId).map(c => ({ id: c.player.id, name: c.player.name, scene: c.player.scene, x: c.player.x, y: c.player.y, appearance: c.player.appearance }));
+  return [...sockets.values()].filter(c => c.player && (!scene || c.player.scene === scene) && c.player.id !== exceptId).map(c => ({ id: c.player.id, name: c.player.name, scene: c.player.scene, x: c.player.x, y: c.player.y, dir: c.player.dir || 0, moving: !!c.player.moving, hp: c.player.hp ?? 100, maxHp: c.player.maxHp ?? 100, action: c.player.action || null, appearance: c.player.appearance }));
+}
+function playerView(p) { return { id: p.id, name: p.name, scene: p.scene, x: p.x, y: p.y, dir: p.dir || 0, moving: !!p.moving, hp: p.hp ?? 100, maxHp: p.maxHp ?? 100, action: p.action || null, appearance: p.appearance }; }
+function applyStatus(p, m) {
+  if ([0, 1, 2, 3].includes(m.dir)) p.dir = m.dir;
+  p.moving = m.moving === true;
+  const maxHp = Number(m.maxHp), hp = Number(m.hp);
+  if (Number.isFinite(maxHp) && maxHp >= 1 && maxHp <= 5000) p.maxHp = Math.round(maxHp);
+  if (Number.isFinite(hp)) p.hp = Math.max(0, Math.min(p.maxHp ?? 100, Math.round(hp)));
+  p.action = ['attack', 'dodge', 'hurt', 'dead'].includes(m.action) ? m.action : null;
 }
 function updatePresence(client) {
   send(client, { type: 'presence', players: playerSnapshot(client.player.scene, client.player.id) });
@@ -137,13 +150,15 @@ function handleMessage(client, message) {
       send(client, { type: 'position', scene, x: spawn[0], y: spawn[1] });
     } else { client.player.x = x; client.player.y = y; }
     client.lastMove = now;
+    applyStatus(client.player, message);
     if (previousScene !== scene) {
       broadcast(previousScene, { type: 'player-left', id: client.player.id, name: client.player.name });
       updatePresence(client);
-    } else broadcast(scene, { type: 'player-moved', player: { id: client.player.id, name: client.player.name, scene, x, y, appearance: client.player.appearance } }, client);
+    } else broadcast(scene, { type: 'player-moved', player: playerView(client.player) }, client);
     if (now - client.lastPersist > 5000) { client.lastPersist = now; const saved = world.players[client.player.username] || {}; world.players[client.player.username] = { ...saved, scene, x, y, appearance: client.player.appearance, lastSeen: now }; persistWorld(); }
     return;
   }
+  if (message.type === 'ping') { send(client, { type: 'pong', t: Number(message.t) || 0 }); return; }
   if (message.type === 'appearance') {
     const a = message.appearance || {};
     const outfit = ['wanderer','ranger','crimson','scholar','ashen'].includes(a.outfit) ? a.outfit : 'wanderer';
@@ -311,8 +326,10 @@ server.on('upgrade', (req, socket) => {
   socket.on('close', () => closeClient(client)); socket.on('error', () => closeClient(client));
   send(client, { type: 'welcome', player: client.player, players: playerSnapshot(client.player.scene, client.player.id), character: world.characters[username] || null, listings: world.marketListings, guilds: guildList(), guild: guildView(guildFor(username), username) });
   updatePresence(client);
+  broadcast(client.player.scene, { type: 'notice', text: `${username} entered the area.` }, client);
 });
 
+loadSessions();
 server.listen(PORT, '0.0.0.0', () => console.log(`Azura multiplayer service listening on http://0.0.0.0:${PORT}`));
 process.on('SIGINT', () => { persistWorld(); server.close(() => process.exit(0)); });
 process.on('SIGTERM', () => { persistWorld(); server.close(() => process.exit(0)); });

@@ -37,6 +37,8 @@ export class Engine {
   emitT = 0;
   saveT = 0;
   networkT = 0;
+  netPrev = { x: 0, y: 0 };
+  frameDt = 0;
   tint = { dark: 0 };
   target: { npc?: NPC; trig?: Trigger; drop?: GroundDrop; resource?: ResourceNode } | null = null;
   drops: GroundDrop[] = [];
@@ -419,7 +421,12 @@ export class Engine {
     const targetDark = this.scene.region ? REGIONS.find((r) => r.id === game.ui.regionId)?.ambient.dark ?? 0 : this.scene.dark;
     this.tint.dark += (targetDark - this.tint.dark) * Math.min(1, dt * 2);
     this.emitT += dt; this.saveT += dt; this.networkT += dt;
-    if (this.networkT >= 0.15) { this.networkT = 0; publishPosition(); }
+    this.frameDt = dt;
+    if (this.networkT >= 0.1) {
+      const p0 = game.data.pos; const moving = Math.hypot(p0.x - this.netPrev.x, p0.y - this.netPrev.y) > 0.01; this.netPrev = { x: p0.x, y: p0.y };
+      const action = game.data.hp <= 0 ? "dead" : this.atk > 0.2 ? "attack" : this.dodge > 0 ? "dodge" : this.hurt > 0 ? "hurt" : null;
+      this.networkT = 0; publishPosition({ dir: this.sdir, moving, action });
+    }
     if (this.emitT > 0.12) { this.emitT = 0; emit(); }
     if (this.saveT > 4) { this.saveT = 0; save(); }
   }
@@ -489,7 +496,7 @@ export class Engine {
       add(d.x, d.y, () => drawDecor(ctx, d, this.t));
     }
     for (const n of s.npcs) add(n.x, n.y, () => drawCharacter(ctx, n.x, n.y, isoFacing(n.dir), n.walk, n.look));
-    for (const remote of getRemotePlayers(s.id)) add(remote.x, remote.y, () => { const a = remote.appearance; const outfit = a?.outfit ?? "wanderer"; const hairStyle = a?.hairStyle ?? "short"; const hairColor = a?.hairColor ?? "#2a3a5a"; drawCharacter(ctx, remote.x, remote.y, 0, this.t, lookFor({ outfit, hairStyle, hairColor })); ctx.save(); ctx.font = "11px sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = "#fff2c2"; ctx.strokeStyle = "#17151d"; ctx.lineWidth = 3; ctx.strokeText(remote.name, remote.x * TILE, remote.y * TILE - 30); ctx.fillText(remote.name, remote.x * TILE, remote.y * TILE - 30); ctx.restore(); });
+    for (const r0 of getRemotePlayers(s.id, this.frameDt)) { const remote = { ...r0, x: r0.rx ?? r0.x, y: r0.ry ?? r0.y }; add(remote.x, remote.y, () => { const a = remote.appearance; const outfit = a?.outfit ?? "wanderer"; const hairStyle = a?.hairStyle ?? "short"; const hairColor = a?.hairColor ?? "#2a3a5a"; if (remote.action === "dead") ctx.globalAlpha = 0.45; drawCharacter(ctx, remote.x, remote.y, (remote.dir ?? 0) as never, remote.moving ? this.t * 6 : 0, lookFor({ outfit, hairStyle, hairColor }), remote.action === "attack" ? 0.8 : 0, remote.action === "hurt" ? 0.2 : 0); ctx.globalAlpha = 1; const hpw = 28, hpr = Math.max(0, Math.min(1, (remote.hp ?? 100) / (remote.maxHp || 100))); ctx.fillStyle = "#17151d"; ctx.fillRect(remote.x * TILE - hpw / 2, remote.y * TILE - 27, hpw, 4); ctx.fillStyle = hpr > 0.5 ? "#6fd46a" : hpr > 0.25 ? "#e3c14a" : "#e0503f"; ctx.fillRect(remote.x * TILE - hpw / 2, remote.y * TILE - 27, hpw * hpr, 4); ctx.save(); ctx.font = "11px sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = "#fff2c2"; ctx.strokeStyle = "#17151d"; ctx.lineWidth = 3; ctx.strokeText(remote.name, remote.x * TILE, remote.y * TILE - 30); ctx.fillText(remote.name, remote.x * TILE, remote.y * TILE - 30); ctx.restore(); }); }
     for (const m of this.monsters.get(s.id) ?? []) if (m.dead <= 0) add(m.x, m.y, () => {
       drawMonster(ctx, m.kind, m.x, m.y, m.t, m.hurt, m.hp / MONSTERS[m.kind].hp, MONSTERS[m.kind].size);
       if (m.kind === "hollowroot_guardian" && m.cd > 0 && m.cd < 0.42) {

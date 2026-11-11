@@ -1,0 +1,12 @@
+# Azura Phase 9.1 — Multiplayer stability (separate Node server)
+- [x] 1. Real-time sync: facing, moving, health, action, smoothing, join/leave notices, auto-reconnect, ping
+- [x] 2 (part). Logins persist across server restart
+- [ ] 2. Persist progression (level/xp) and world events on server
+- [ ] 3. Server authority: server-granted rewards instead of client snapshots
+- [ ] 4. Private messages, global vs nearby chat, trade invites
+- [ ] 5. Party leader/online status/member locations
+- [ ] 6. Shared monster health and loot, boss kill dedupe
+- [ ] 7. Two-player trade sessions with atomic exchange + transaction log
+- [ ] 8. Nearby-only visibility, rate limits
+- [ ] 9. Party/trade UI
+- [ ] 10/11. Recovery safeguards, multi-client tests, ZIP + docs
